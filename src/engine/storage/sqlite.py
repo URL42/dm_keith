@@ -56,7 +56,6 @@ class SQLiteStore:
         if self._connection is None:
             self._connection = sqlite3.connect(
                 self.path,
-                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
                 check_same_thread=False,
             )
             self._connection.row_factory = sqlite3.Row
@@ -186,6 +185,7 @@ class SQLiteStore:
         """Insert an achievement grant row and return the created record."""
         payload = json.dumps(detail or {}, separators=(",", ":"))
         awarded_at = datetime.now(timezone.utc)
+        awarded_at_str = awarded_at.strftime("%Y-%m-%d %H:%M:%S")
         conn = self.connect()
         with self._lock:
             cursor = conn.execute(
@@ -199,7 +199,7 @@ class SQLiteStore:
                     user_id,
                     session_id,
                     rarity,
-                    awarded_at.isoformat(),
+                    awarded_at_str,
                     payload,
                 ),
             )
@@ -300,9 +300,19 @@ class SQLiteStore:
 
 def _parse_datetime(value: Any) -> datetime:
     if isinstance(value, datetime):
-        return value
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
     if isinstance(value, str):
-        return datetime.fromisoformat(value)
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            dt = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
     raise TypeError(f"Unsupported datetime value: {value!r}")
 
 
