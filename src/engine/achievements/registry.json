@@ -1,0 +1,722 @@
+[
+  {
+    "id": "icebox-raider",
+    "title": "Icebox Raider",
+    "description": "You invaded the chilling vault of leftovers without even checking for mimics.",
+    "reward": "+2 Cold Resistance against questionably dated yogurt",
+    "rarity": "common",
+    "tags": [
+      "narration",
+      "food"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 7200,
+    "once_per_user": false
+  },
+  {
+    "id": "torchbearer-101",
+    "title": "Torchbearer 101",
+    "description": "You took your first cautious step into Keith's snarky dungeon.",
+    "reward": "Starter torch that flickers purely out of spite",
+    "rarity": "common",
+    "tags": [
+      "onboarding",
+      "narration"
+    ],
+    "triggers": [
+      "event.message.first_contact"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "dramatic-sigh",
+    "title": "Dramatic Sigh",
+    "description": "You prompted a narrator eye-roll audible across planes.",
+    "reward": "+1 Inspiration when roasting yourself",
+    "rarity": "common",
+    "tags": [
+      "tone",
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 1800,
+    "once_per_user": false
+  },
+  {
+    "id": "corridor-cartographer",
+    "title": "Corridor Cartographer",
+    "description": "You mapped an imaginary hallway with suspicious confidence.",
+    "reward": "Blueprints to three different broom closets",
+    "rarity": "uncommon",
+    "tags": [
+      "exploration",
+      "narration"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "pun-powered",
+    "title": "Pun Powered",
+    "description": "You lobbed a pun so potent it triggered OSHA paperwork.",
+    "reward": "Rechargeable groan crystal",
+    "rarity": "uncommon",
+    "tags": [
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 900,
+    "once_per_user": false
+  },
+  {
+    "id": "rule-zero",
+    "title": "Rule Zero",
+    "description": "You told Keith to narrate harder. He will. Oh he will.",
+    "reward": "House rule veto coupon",
+    "rarity": "uncommon",
+    "tags": [
+      "mode",
+      "narrator"
+    ],
+    "triggers": [
+      "cmd.mode.narrator"
+    ],
+    "cooldown_sec": 300,
+    "once_per_user": false
+  },
+  {
+    "id": "explain-yourself",
+    "title": "Explain Yourself",
+    "description": "You requested an analysis with disturbing enthusiasm.",
+    "reward": "+1 Spectral Highlighter",
+    "rarity": "uncommon",
+    "tags": [
+      "mode",
+      "analysis"
+    ],
+    "triggers": [
+      "cmd.mode.explain"
+    ],
+    "cooldown_sec": 300,
+    "once_per_user": false
+  },
+  {
+    "id": "achievement-goblin",
+    "title": "Achievement Goblin",
+    "description": "You demanded pure achievement spam like it's a loot box.",
+    "reward": "Loot bag full of confetti and unmet expectations",
+    "rarity": "rare",
+    "tags": [
+      "mode",
+      "meta"
+    ],
+    "triggers": [
+      "cmd.mode.achievements"
+    ],
+    "cooldown_sec": 600,
+    "once_per_user": false
+  },
+  {
+    "id": "storyteller-on-deck",
+    "title": "Storyteller On Deck",
+    "description": "You spun up the story engine before the interns could protest.",
+    "reward": "Foldable narrative rail",
+    "rarity": "rare",
+    "tags": [
+      "mode",
+      "story"
+    ],
+    "triggers": [
+      "cmd.mode.story"
+    ],
+    "cooldown_sec": 600,
+    "once_per_user": false
+  },
+  {
+    "id": "csv-seer",
+    "title": "CSV Seer",
+    "description": "You offered Keith a spreadsheet and he saw the matrix.",
+    "reward": "+5 Insight when counting columns",
+    "rarity": "uncommon",
+    "tags": [
+      "analysis",
+      "data"
+    ],
+    "triggers": [
+      "event.upload.csv"
+    ],
+    "cooldown_sec": 1200,
+    "once_per_user": false
+  },
+  {
+    "id": "pdf-whisperer",
+    "title": "PDF Whisperer",
+    "description": "You expect coherent lore from a cursed PDF.",
+    "reward": "Scroll of Anti-Compression",
+    "rarity": "rare",
+    "tags": [
+      "analysis",
+      "documents"
+    ],
+    "triggers": [
+      "event.upload.pdf"
+    ],
+    "cooldown_sec": 1800,
+    "once_per_user": false
+  },
+  {
+    "id": "pixel-scryer",
+    "title": "Pixel Scryer",
+    "description": "You tossed Keith an image to interpret like a crystal ball screenshot.",
+    "reward": "Palette of Dramatic Foreshadowing",
+    "rarity": "uncommon",
+    "tags": [
+      "analysis",
+      "image"
+    ],
+    "triggers": [
+      "event.upload.image"
+    ],
+    "cooldown_sec": 1200,
+    "once_per_user": false
+  },
+  {
+    "id": "plot-armor",
+    "title": "Plot Armor",
+    "description": "You survived a narrative twist with smug defiance.",
+    "reward": "+1d4 Sarcastic Shielding",
+    "rarity": "rare",
+    "tags": [
+      "narration",
+      "story"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 7200,
+    "once_per_user": false
+  },
+  {
+    "id": "cliffhanger-connoisseur",
+    "title": "Cliffhanger Connoisseur",
+    "description": "You left at the most dramatic possible moment. Rude, but effective.",
+    "reward": "Punch card for future dramatic exits",
+    "rarity": "rare",
+    "tags": [
+      "story",
+      "timing"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 10800,
+    "once_per_user": false
+  },
+  {
+    "id": "dice-anxiety",
+    "title": "Dice Anxiety",
+    "description": "You worried about RNG in a purely narrative dungeon.",
+    "reward": "Weighted d20 that only lands on 7",
+    "rarity": "common",
+    "tags": [
+      "humor",
+      "meta"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "metaphor-foundry",
+    "title": "Metaphor Foundry",
+    "description": "You forged metaphors hotter than a salamander sauna.",
+    "reward": "Infinite forge of tortured comparisons",
+    "rarity": "uncommon",
+    "tags": [
+      "writing",
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 1800,
+    "once_per_user": false
+  },
+  {
+    "id": "logic-lantern",
+    "title": "Logic Lantern",
+    "description": "You forced Keith to actually be correct. Nerd.",
+    "reward": "Lantern of Pedantic Clarity",
+    "rarity": "uncommon",
+    "tags": [
+      "analysis",
+      "accuracy"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 2700,
+    "once_per_user": false
+  },
+  {
+    "id": "profanity-dimmer",
+    "title": "Profanity Dimmer",
+    "description": "You dialed down the swears like a responsible adult.",
+    "reward": "Parental advisory badge that glows politely",
+    "rarity": "common",
+    "tags": [
+      "safety",
+      "toggles"
+    ],
+    "triggers": [
+      "cmd.set.profanity"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "pg-paladin",
+    "title": "PG Paladin",
+    "description": "You kept it PG and still managed theatrical chaos.",
+    "reward": "Radiant aura of wholesome snark",
+    "rarity": "uncommon",
+    "tags": [
+      "safety",
+      "rating"
+    ],
+    "triggers": [
+      "cmd.set.rating"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "sarcasm-critical",
+    "title": "Sarcasm Critical",
+    "description": "You provoked a level-9 sarcasm beam straight from the narrator.",
+    "reward": "Mirror shield of reflected sass",
+    "rarity": "rare",
+    "tags": [
+      "tone",
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 5400,
+    "once_per_user": false
+  },
+  {
+    "id": "mythic-eye-roll",
+    "title": "Mythic Eye Roll",
+    "description": "Keith rolled his eyes so hard he saw the astral plane.",
+    "reward": "Legendary contact lenses of patience",
+    "rarity": "mythic",
+    "tags": [
+      "tone",
+      "mythic"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 43200,
+    "once_per_user": false
+  },
+  {
+    "id": "mode-hopper",
+    "title": "Mode Hopper",
+    "description": "You cycled modes faster than a bard swapping instruments.",
+    "reward": "Universal remote of narrative control",
+    "rarity": "rare",
+    "tags": [
+      "mode",
+      "meta"
+    ],
+    "triggers": [
+      "cmd.mode.narrator",
+      "cmd.mode.explain",
+      "cmd.mode.achievements",
+      "cmd.mode.story"
+    ],
+    "cooldown_sec": 1800,
+    "once_per_user": false
+  },
+  {
+    "id": "exposition-engineer",
+    "title": "Exposition Engineer",
+    "description": "You requested lore dumps with alarming precision.",
+    "reward": "Steam-powered infodump machine",
+    "rarity": "uncommon",
+    "tags": [
+      "analysis",
+      "lore"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 2400,
+    "once_per_user": false
+  },
+  {
+    "id": "tangent-tamer",
+    "title": "Tangent Tamer",
+    "description": "You politely curbed Keith's sidebar spree.",
+    "reward": "Whistle of Conversational Herding",
+    "rarity": "rare",
+    "tags": [
+      "toggles",
+      "focus"
+    ],
+    "triggers": [
+      "cmd.set.tangents"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "density-manager",
+    "title": "Density Manager",
+    "description": "You adjusted achievement density like a loot sommelier.",
+    "reward": "Clipboard of calibrated hype",
+    "rarity": "rare",
+    "tags": [
+      "toggles",
+      "meta"
+    ],
+    "triggers": [
+      "cmd.set.achievements"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "duplicate-dodger",
+    "title": "Duplicate Dodger",
+    "description": "You tripped the anti-duplicate trap and lived to brag about it.",
+    "reward": "Charm of Idempotent Glory",
+    "rarity": "rare",
+    "tags": [
+      "system",
+      "safety"
+    ],
+    "triggers": [
+      "event.achievement.duplicate"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "cooldown-commander",
+    "title": "Cooldown Commander",
+    "description": "You respected the cooldowns like a lawful neutral paladin.",
+    "reward": "Hourglass of Responsible Farming",
+    "rarity": "uncommon",
+    "tags": [
+      "system",
+      "timing"
+    ],
+    "triggers": [
+      "event.achievement.cooldown"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "bug-banisher",
+    "title": "Bug Banisher",
+    "description": "You survived an exception and logged it like a pro cleric.",
+    "reward": "Debugging incense sticks",
+    "rarity": "rare",
+    "tags": [
+      "system",
+      "recovery"
+    ],
+    "triggers": [
+      "event.error.exception"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "safety-first",
+    "title": "Safety First",
+    "description": "You kept Keith inside the PG-13 guardrails.",
+    "reward": "Seatbelt of Narrative Responsibility",
+    "rarity": "common",
+    "tags": [
+      "safety"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 7200,
+    "once_per_user": false
+  },
+  {
+    "id": "dramatic-callback",
+    "title": "Dramatic Callback",
+    "description": "You referenced a previous bit so cleanly the narrator applauded.",
+    "reward": "Echo stone of perfectly timed jokes",
+    "rarity": "uncommon",
+    "tags": [
+      "story",
+      "continuity"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 5400,
+    "once_per_user": false
+  },
+  {
+    "id": "continuity-keeper",
+    "title": "Continuity Keeper",
+    "description": "You actually remembered what happened last scene.",
+    "reward": "Binder of Chronological Snark",
+    "rarity": "uncommon",
+    "tags": [
+      "story",
+      "memory"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 7200,
+    "once_per_user": false
+  },
+  {
+    "id": "banter-bandit",
+    "title": "Banter Bandit",
+    "description": "You stole the spotlight with a quip worth at least 3 XP.",
+    "reward": "Mask of Charming Interjections",
+    "rarity": "uncommon",
+    "tags": [
+      "humor",
+      "dialogue"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 2400,
+    "once_per_user": false
+  },
+  {
+    "id": "pun-summoner",
+    "title": "Pun Summoner",
+    "description": "You summoned a pun elemental and now we all must suffer.",
+    "reward": "Glyph of Groan Amplification",
+    "rarity": "rare",
+    "tags": [
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 5400,
+    "once_per_user": false
+  },
+  {
+    "id": "session-zero-hero",
+    "title": "Session Zero Hero",
+    "description": "You handled onboarding like a veteran DM.",
+    "reward": "Consent form laminated in gold foil",
+    "rarity": "uncommon",
+    "tags": [
+      "onboarding",
+      "safety"
+    ],
+    "triggers": [
+      "event.message.first_contact"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "databank-dweller",
+    "title": "Databank Dweller",
+    "description": "You dove into stored memories like a lore archivist.",
+    "reward": "Library card of omniscient gossip",
+    "rarity": "rare",
+    "tags": [
+      "system",
+      "data"
+    ],
+    "triggers": [
+      "event.storage.query"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "sqlite-squire",
+    "title": "SQLite Squire",
+    "description": "You forged a database connection without summoning a demon.",
+    "reward": "Tiny anvil of ACID compliance",
+    "rarity": "uncommon",
+    "tags": [
+      "system",
+      "storage"
+    ],
+    "triggers": [
+      "event.storage.connect"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "migration-mage",
+    "title": "Migration Mage",
+    "description": "You invoked schema migrations like a disciplined wizard.",
+    "reward": "Spellbook of Ordered Change",
+    "rarity": "rare",
+    "tags": [
+      "system",
+      "storage"
+    ],
+    "triggers": [
+      "event.storage.migrate"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "telegram-trailblazer",
+    "title": "Telegram Trailblazer",
+    "description": "You connected Keith to the mortal plane of Telegram.",
+    "reward": "Badge of Cellular Summoning",
+    "rarity": "rare",
+    "tags": [
+      "integration",
+      "telegram"
+    ],
+    "triggers": [
+      "event.telegram.connected"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": true
+  },
+  {
+    "id": "long-rest-reminder",
+    "title": "Long Rest Reminder",
+    "description": "You suggested touching grass after a marathon session.",
+    "reward": "Feather bed of mandatory self-care",
+    "rarity": "uncommon",
+    "tags": [
+      "wellness",
+      "meta"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 14400,
+    "once_per_user": false
+  },
+  {
+    "id": "crit-fail-foresight",
+    "title": "Crit-Fail Foresight",
+    "description": "You braced for disaster before the dice even rolled.",
+    "reward": "Helm of Reasonable Expectations",
+    "rarity": "rare",
+    "tags": [
+      "safety",
+      "humor"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "narrative-edge",
+    "title": "Narrative Edge",
+    "description": "You kept Keith dancing on the razor's edge of melodrama.",
+    "reward": "Edge of Excessive Alliteration",
+    "rarity": "epic",
+    "tags": [
+      "story",
+      "tone"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 21600,
+    "once_per_user": false
+  },
+  {
+    "id": "heroic-handoff",
+    "title": "Heroic Handoff",
+    "description": "You set up the next player like a narrative pro.",
+    "reward": "Relay baton of collaborative chaos",
+    "rarity": "uncommon",
+    "tags": [
+      "collaboration",
+      "story"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 2700,
+    "once_per_user": false
+  },
+  {
+    "id": "callback-conductor",
+    "title": "Callback Conductor",
+    "description": "You orchestrated inter-scene references with smug precision.",
+    "reward": "Metronome of Narrative Rhythm",
+    "rarity": "rare",
+    "tags": [
+      "story",
+      "continuity"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 7200,
+    "once_per_user": false
+  },
+  {
+    "id": "farsight-analyst",
+    "title": "Farsight Analyst",
+    "description": "You asked Keith to predict the obvious and he did, begrudgingly.",
+    "reward": "Budget prophecy voucher",
+    "rarity": "uncommon",
+    "tags": [
+      "analysis",
+      "prediction"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 3600,
+    "once_per_user": false
+  },
+  {
+    "id": "continuity-gremlin",
+    "title": "Continuity Gremlin",
+    "description": "You gleefully broke canon just to see what happens.",
+    "reward": "Pocket watch of paradox immunity",
+    "rarity": "rare",
+    "tags": [
+      "story",
+      "chaos"
+    ],
+    "triggers": [
+      "event.message"
+    ],
+    "cooldown_sec": 10800,
+    "once_per_user": false
+  }
+]
