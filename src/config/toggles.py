@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 load_dotenv()
 
 
-AllowedProfanityLevel = Literal[0, 1, 2, 3]
+AllowedProfanityLevel = int
 AllowedRating = Literal["PG", "PG-13", "R"]
-AllowedTangentsLevel = Literal[0, 1, 2]
+AllowedTangentsLevel = int
 AllowedAchievementDensity = Literal["low", "normal", "high"]
 AllowedMode = Literal["narrator", "achievements", "explain", "story"]
 
@@ -46,6 +46,15 @@ class Settings(BaseModel):
         path = Path(value).expanduser()
         return str(path)
 
+    @field_validator("profanity_level", mode="before")
+    @classmethod
+    def _coerce_profanity_level(cls, value: Union[str, int, None]) -> Union[int, None]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            return int(value.strip())
+        return value
+
     @field_validator("profanity_level")
     @classmethod
     def _validate_profanity(cls, value: int) -> int:
@@ -70,6 +79,22 @@ class Settings(BaseModel):
                 "DMK_DEFAULT_MODE must be one of narrator|achievements|explain|story."
             )
         return normalized
+
+    @field_validator("tangents_level", mode="before")
+    @classmethod
+    def _coerce_tangents(cls, value: Union[str, int, None]) -> Union[int, None]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            return int(value.strip())
+        return value
+
+    @field_validator("tangents_level")
+    @classmethod
+    def _validate_tangents(cls, value: int) -> int:
+        if value not in (0, 1, 2):
+            raise ValueError("DMK_TANGENTS_LEVEL must be 0, 1, or 2.")
+        return value
 
     @property
     def db_path_obj(self) -> Path:
