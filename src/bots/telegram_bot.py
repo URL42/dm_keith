@@ -251,6 +251,8 @@ class TelegramBot:
         state = self.store.get_session(session_id)
         if state:
             return state
+        # Ensure a user row exists before creating a session to satisfy FK constraints.
+        self.store.ensure_user(user_id)
         return self.store.upsert_session(session_id, user_id)
 
 
