@@ -718,5 +718,21 @@
     ],
     "cooldown_sec": 10800,
     "once_per_user": false
+  },
+  {
+    "id": "level-up-ling",
+    "title": "Level Up Ling",
+    "description": "You ascended to a new level without losing any essential limbs.",
+    "reward": "Badge of Incremental Greatness",
+    "rarity": "rare",
+    "tags": [
+      "story",
+      "progress"
+    ],
+    "triggers": [
+      "event.story.level_up"
+    ],
+    "cooldown_sec": 0,
+    "once_per_user": false
   }
 ]

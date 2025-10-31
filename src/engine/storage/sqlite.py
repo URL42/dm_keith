@@ -8,7 +8,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from ...config.toggles import ensure_database_path, get_settings
 
@@ -36,8 +36,50 @@ class SessionState:
     profanity_level: int
     rating: str
     tangents_level: int
+    achievement_density: str
+    story_mode_enabled: bool
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoryProfile:
+    session_id: str
+    user_id: str
+    character_name: Optional[str]
+    pronouns: Optional[str]
+    race: Optional[str]
+    character_class: Optional[str]
+    backstory: Optional[str]
+    level: int
+    experience: int
+    ability_scores: dict[str, Any]
+    inventory: dict[str, Any]
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoryState:
+    session_id: str
+    current_scene: Optional[str]
+    scene_history: Sequence[str]
+    flags: dict[str, Any]
+    stats: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class StoryRoll:
+    id: int
+    session_id: str
+    user_id: str
+    expression: str
+    result_total: int
+    result_detail: dict[str, Any]
+    created_at: datetime
 
 
 class SQLiteStore:
@@ -67,6 +109,7 @@ class SQLiteStore:
         conn = self.connect()
         with self._lock:
             conn.executescript(sql)
+            self._ensure_session_columns(conn)
             conn.commit()
 
     def close(self) -> None:
@@ -75,6 +118,32 @@ class SQLiteStore:
             with self._lock:
                 self._connection.close()
                 self._connection = None
+
+    def _ensure_session_columns(self, conn: sqlite3.Connection) -> None:
+        """Add newly introduced columns to sessions when missing."""
+        alterations = [
+            (
+                "ALTER TABLE sessions ADD COLUMN achievement_density TEXT NOT NULL DEFAULT 'normal'",
+                "achievement_density",
+            ),
+            (
+                "ALTER TABLE sessions ADD COLUMN story_mode_enabled INTEGER NOT NULL DEFAULT 0",
+                "story_mode_enabled",
+            ),
+        ]
+        existing = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        for statement, column in alterations:
+            if column in existing:
+                continue
+            try:
+                conn.execute(statement)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" in str(exc).lower():
+                    continue
+                raise
 
     def ensure_user(self, user_id: str, display_name: Optional[str] = None) -> None:
         """Insert or update a user record."""
@@ -104,6 +173,8 @@ class SQLiteStore:
                        profanity_level,
                        rating,
                        tangents_level,
+                       achievement_density,
+                       story_mode_enabled,
                        created_at,
                        updated_at
                 FROM sessions
@@ -120,6 +191,8 @@ class SQLiteStore:
             profanity_level=row["profanity_level"],
             rating=row["rating"],
             tangents_level=row["tangents_level"],
+            achievement_density=row["achievement_density"],
+            story_mode_enabled=bool(row["story_mode_enabled"]),
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )
@@ -133,6 +206,8 @@ class SQLiteStore:
         profanity_level: Optional[int] = None,
         rating: Optional[str] = None,
         tangents_level: Optional[int] = None,
+        achievement_density: Optional[str] = None,
+        story_mode_enabled: Optional[bool] = None,
     ) -> SessionState:
         """Create or update a session row, returning the latest view."""
         current = self.get_session(session_id)
@@ -148,18 +223,30 @@ class SQLiteStore:
             if tangents_level is not None
             else (current.tangents_level if current else 1)
         )
+        next_density = (
+            achievement_density
+            if achievement_density is not None
+            else (current.achievement_density if current else "normal")
+        )
+        next_story_mode = (
+            int(story_mode_enabled)
+            if story_mode_enabled is not None
+            else (1 if (current and current.story_mode_enabled) else 0)
+        )
 
         conn = self.connect()
         with self._lock:
             conn.execute(
                 """
-                INSERT INTO sessions (id, user_id, mode, profanity_level, rating, tangents_level)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions (id, user_id, mode, profanity_level, rating, tangents_level, achievement_density, story_mode_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     mode=excluded.mode,
                     profanity_level=excluded.profanity_level,
                     rating=excluded.rating,
                     tangents_level=excluded.tangents_level,
+                    achievement_density=excluded.achievement_density,
+                    story_mode_enabled=excluded.story_mode_enabled,
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -169,6 +256,8 @@ class SQLiteStore:
                     next_profanity,
                     next_rating,
                     next_tangents,
+                    next_density,
+                    next_story_mode,
                 ),
             )
             conn.commit()
@@ -297,6 +386,289 @@ class SQLiteStore:
             detail=json.loads(row["detail"] or "{}"),
         )
 
+    def get_story_profile(self, session_id: str) -> Optional[StoryProfile]:
+        conn = self.connect()
+        with self._lock:
+            row = conn.execute(
+                """
+                SELECT session_id,
+                       user_id,
+                       character_name,
+                       pronouns,
+                       race,
+                       character_class,
+                       backstory,
+                       level,
+                       experience,
+                       ability_scores,
+                       inventory,
+                       metadata,
+                       created_at,
+                       updated_at
+                FROM story_profiles
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return StoryProfile(
+            session_id=row["session_id"],
+            user_id=row["user_id"],
+            character_name=row["character_name"],
+            pronouns=row["pronouns"],
+            race=row["race"],
+            character_class=row["character_class"],
+            backstory=row["backstory"],
+            level=row["level"],
+            experience=row["experience"],
+            ability_scores=json.loads(row["ability_scores"] or "{}"),
+            inventory=json.loads(row["inventory"] or "{}"),
+            metadata=json.loads(row["metadata"] or "{}"),
+            created_at=_parse_datetime(row["created_at"]),
+            updated_at=_parse_datetime(row["updated_at"]),
+        )
+
+    def upsert_story_profile(
+        self,
+        session_id: str,
+        user_id: str,
+        *,
+        character_name: Optional[str] = None,
+        pronouns: Optional[str] = None,
+        race: Optional[str] = None,
+        character_class: Optional[str] = None,
+        backstory: Optional[str] = None,
+        level: Optional[int] = None,
+        experience: Optional[int] = None,
+        ability_scores: Optional[dict[str, Any]] = None,
+        inventory: Optional[dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> StoryProfile:
+        current = self.get_story_profile(session_id)
+        next_level = level if level is not None else (current.level if current else 1)
+        next_experience = (
+            experience if experience is not None else (current.experience if current else 0)
+        )
+        next_ability = ability_scores if ability_scores is not None else (
+            current.ability_scores if current else {}
+        )
+        next_inventory = inventory if inventory is not None else (current.inventory if current else {})
+        next_metadata = metadata if metadata is not None else (current.metadata if current else {})
+        conn = self.connect()
+        with self._lock:
+            conn.execute(
+                """
+                INSERT INTO story_profiles (
+                    session_id,
+                    user_id,
+                    character_name,
+                    pronouns,
+                    race,
+                    character_class,
+                    backstory,
+                    level,
+                    experience,
+                    ability_scores,
+                    inventory,
+                    metadata
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    character_name=excluded.character_name,
+                    pronouns=excluded.pronouns,
+                    race=excluded.race,
+                    character_class=excluded.character_class,
+                    backstory=excluded.backstory,
+                    level=excluded.level,
+                    experience=excluded.experience,
+                    ability_scores=excluded.ability_scores,
+                    inventory=excluded.inventory,
+                    metadata=excluded.metadata,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    session_id,
+                    user_id,
+                    character_name
+                    if character_name is not None
+                    else (current.character_name if current else None),
+                    pronouns if pronouns is not None else (current.pronouns if current else None),
+                    race if race is not None else (current.race if current else None),
+                    character_class
+                    if character_class is not None
+                    else (current.character_class if current else None),
+                    backstory if backstory is not None else (current.backstory if current else None),
+                    next_level,
+                    next_experience,
+                    json.dumps(next_ability, separators=(",", ":")),
+                    json.dumps(next_inventory, separators=(",", ":")),
+                    json.dumps(next_metadata, separators=(",", ":")),
+                ),
+            )
+            conn.commit()
+        return self.get_story_profile(session_id)  # type: ignore[return-value]
+
+    def get_story_state(self, session_id: str) -> Optional[StoryState]:
+        conn = self.connect()
+        with self._lock:
+            row = conn.execute(
+                """
+                SELECT session_id,
+                       current_scene,
+                       scene_history,
+                       flags,
+                       stats,
+                       created_at,
+                       updated_at
+                FROM story_state
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return StoryState(
+            session_id=row["session_id"],
+            current_scene=row["current_scene"],
+            scene_history=tuple(json.loads(row["scene_history"] or "[]")),
+            flags=json.loads(row["flags"] or "{}"),
+            stats=json.loads(row["stats"] or "{}"),
+            created_at=_parse_datetime(row["created_at"]),
+            updated_at=_parse_datetime(row["updated_at"]),
+        )
+
+    def upsert_story_state(
+        self,
+        session_id: str,
+        *,
+        current_scene: Optional[str] = None,
+        scene_history: Optional[Sequence[str]] = None,
+        flags: Optional[dict[str, Any]] = None,
+        stats: Optional[dict[str, Any]] = None,
+    ) -> StoryState:
+        current = self.get_story_state(session_id)
+        next_scene = current_scene if current_scene is not None else (current.current_scene if current else None)
+        next_history = (
+            list(scene_history)
+            if scene_history is not None
+            else (list(current.scene_history) if current else [])
+        )
+        next_flags = flags if flags is not None else (current.flags if current else {})
+        next_stats = stats if stats is not None else (current.stats if current else {})
+
+        conn = self.connect()
+        with self._lock:
+            conn.execute(
+                """
+                INSERT INTO story_state (
+                    session_id,
+                    current_scene,
+                    scene_history,
+                    flags,
+                    stats
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    current_scene=excluded.current_scene,
+                    scene_history=excluded.scene_history,
+                    flags=excluded.flags,
+                    stats=excluded.stats,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    session_id,
+                    next_scene,
+                    json.dumps(list(next_history), separators=(",", ":")),
+                    json.dumps(next_flags, separators=(",", ":")),
+                    json.dumps(next_stats, separators=(",", ":")),
+                ),
+            )
+            conn.commit()
+        return self.get_story_state(session_id)  # type: ignore[return-value]
+
+    def log_story_roll(
+        self,
+        session_id: str,
+        user_id: str,
+        expression: str,
+        result_total: int,
+        result_detail: dict[str, Any],
+    ) -> StoryRoll:
+        conn = self.connect()
+        created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with self._lock:
+            cursor = conn.execute(
+                """
+                INSERT INTO story_rolls (
+                    session_id,
+                    user_id,
+                    expression,
+                    result_total,
+                    result_detail,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    expression,
+                    result_total,
+                    json.dumps(result_detail, separators=(",", ":")),
+                    created_at,
+                ),
+            )
+            conn.commit()
+            roll_id = cursor.lastrowid
+        return StoryRoll(
+            id=roll_id,
+            session_id=session_id,
+            user_id=user_id,
+            expression=expression,
+            result_total=result_total,
+            result_detail=result_detail,
+            created_at=datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc),
+        )
+
+    def fetch_recent_story_rolls(
+        self,
+        session_id: str,
+        limit: int = 10,
+    ) -> list[StoryRoll]:
+        conn = self.connect()
+        with self._lock:
+            rows = conn.execute(
+                """
+                SELECT id,
+                       session_id,
+                       user_id,
+                       expression,
+                       result_total,
+                       result_detail,
+                       created_at
+                FROM story_rolls
+                WHERE session_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+        rolls: list[StoryRoll] = []
+        for row in rows:
+            rolls.append(
+                StoryRoll(
+                    id=row["id"],
+                    session_id=row["session_id"],
+                    user_id=row["user_id"],
+                    expression=row["expression"],
+                    result_total=row["result_total"],
+                    result_detail=json.loads(row["result_detail"] or "{}"),
+                    created_at=_parse_datetime(row["created_at"]),
+                )
+            )
+        return rolls
+
 
 def _parse_datetime(value: Any) -> datetime:
     if isinstance(value, datetime):
@@ -316,4 +688,11 @@ def _parse_datetime(value: Any) -> datetime:
     raise TypeError(f"Unsupported datetime value: {value!r}")
 
 
-__all__ = ["SQLiteStore", "AchievementGrant", "SessionState"]
+__all__ = [
+    "SQLiteStore",
+    "AchievementGrant",
+    "SessionState",
+    "StoryProfile",
+    "StoryState",
+    "StoryRoll",
+]

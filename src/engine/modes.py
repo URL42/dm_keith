@@ -20,6 +20,8 @@ from ..engine.achievements import (
     load_registry,
 )
 from ..engine.storage import SQLiteStore
+from .character import profile_ready
+from .story import StoryEngine
 from ..utils.formatting import format_achievement_block
 
 
@@ -59,12 +61,17 @@ class ModeRouter:
         self.agent = agent or DMKAgent(self.settings)
         self._registry = load_registry()
         self._registry_index = {achievement.id: achievement for achievement in self._registry}
+        self.story_engine = StoryEngine(self.store)
 
     def handle(self, request: ModeRequest) -> ModeResponse:
         if not request.triggers:
             triggers = ("event.message",)
         else:
             triggers = request.triggers
+
+        attachments = list(request.attachments)
+        metadata = dict(request.metadata)
+        agent_message = request.message
 
         self.store.ensure_user(request.user_id, request.display_name)
         overrides = request.metadata.get("session_overrides", {})
@@ -75,14 +82,39 @@ class ModeRouter:
             profanity_level=overrides.get("profanity_level"),
             rating=overrides.get("rating"),
             tangents_level=overrides.get("tangents_level"),
+            achievement_density=overrides.get("achievement_density"),
+            story_mode_enabled=overrides.get("story_mode_enabled"),
         )
+
+        if session_state.mode == "story":
+            profile = self.store.get_story_profile(request.session_id)
+            if not profile or not profile_ready(profile) or not session_state.story_mode_enabled:
+                return self._story_setup_response(request, session_state.mode)
+            story_turn = self.story_engine.process_turn(
+                request.session_id,
+                request.user_id,
+                profile,
+                request.message,
+            )
+            attachments.extend(story_turn.attachments)
+            agent_message = story_turn.agent_message
+            combined_triggers = list(triggers)
+            for trig in story_turn.triggers:
+                if trig not in combined_triggers:
+                    combined_triggers.append(trig)
+            triggers = tuple(combined_triggers)
+            metadata.setdefault("story", {}).update(story_turn.metadata)
 
         achievement_event = AchievementEvent.from_trigger(
             user_id=request.user_id,
             session_id=request.session_id,
             trigger=triggers[0],
             extra_triggers=triggers[1:],
-            payload={"metadata": request.metadata, "text": request.message},
+            payload={
+                "metadata": metadata,
+                "text": request.message,
+                "agent_message": agent_message,
+            },
         )
         award = award_achievement(achievement_event, AwardContext(store=self.store))
 
@@ -100,7 +132,7 @@ class ModeRouter:
             "profanity_level": session_state.profanity_level,
             "rating": session_state.rating,
             "tangents_level": session_state.tangents_level,
-            "achievement_density": self.settings.achievement_density,
+            "achievement_density": session_state.achievement_density,
         }
 
         body = self._generate_body(
@@ -108,6 +140,8 @@ class ModeRouter:
             mode=session_state.mode,
             achievement=achievement,
             toggle_snapshot=toggle_snapshot,
+            message=agent_message,
+            attachments=tuple(attachments),
         )
         full_text = f"{block}\n\n{body}"
         return ModeResponse(
@@ -125,23 +159,26 @@ class ModeRouter:
         mode: AllowedMode,
         achievement: Achievement,
         toggle_snapshot: dict[str, Any],
+        message: str,
+        attachments: Sequence[str],
     ) -> str:
         try:
             return self.agent.generate_reply(
-                user_message=request.message,
+                user_message=message,
                 mode=mode,
                 achievement=achievement,
                 toggle_snapshot=toggle_snapshot,
                 history=request.history,
-                attachments=request.attachments,
+                attachments=attachments,
             )
         except AgentNotConfiguredError:
-            return self._offline_body(request, achievement, toggle_snapshot)
+            return self._offline_body(request, achievement, toggle_snapshot, message)
         except AgentError:
             return self._offline_body(
                 request,
                 achievement,
                 toggle_snapshot,
+                message=message,
                 error_mode=True,
             )
 
@@ -150,11 +187,12 @@ class ModeRouter:
         request: ModeRequest,
         achievement: Achievement,
         toggle_snapshot: dict[str, Any],
+        message: str,
         *,
         error_mode: bool = False,
     ) -> str:
         """Fallback when the OpenAI client is unavailable."""
-        sanitized = request.message.strip()
+        sanitized = message.strip()
         toggle_line = ", ".join(
             f"{key}={value}" for key, value in toggle_snapshot.items()
         )
@@ -184,6 +222,23 @@ class ModeRouter:
                 return achievement
         # Fallback to the first registry entry for deterministic behavior.
         return self._registry[0]
+
+    def _story_setup_response(self, request: ModeRequest, mode: AllowedMode) -> ModeResponse:
+        achievement = self._registry_index.get("session-zero-hero", self._registry[0])
+        block = format_achievement_block(achievement)
+        body = (
+            "Keith taps the storybook closed. Before we dive into the saga, "
+            "run `/character` to finish crafting your persona and then `/character finalize`."
+            " Once you're ready, set `/mode story` and we'll start the orientation crawl."
+        )
+        text = f"{block}\n\n{body}"
+        return ModeResponse(
+            text=text,
+            achievement_id=achievement.id,
+            mode=mode,
+            was_new=False,
+            trigger="event.story.setup",
+        )
 
 
 __all__ = ["ModeRouter", "ModeRequest", "ModeResponse"]

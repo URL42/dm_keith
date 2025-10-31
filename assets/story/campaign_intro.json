@@ -1,0 +1,177 @@
+{
+  "campaign": "Orientation at the Soggy Keep",
+  "root_scene": "intro",
+  "scenes": [
+    {
+      "id": "intro",
+      "title": "The Soggy Briefing",
+      "narration": [
+        "You and a few other recruits stand ankle-deep in dungeon runoff while Keith, your allegedly omniscient narrator, waits for you to pick a direction.",
+        "A trio of options presents itself: a corridor humming with arcane energy, a suspicious lever, and a door labeled 'Definitely Not A Mimic'."
+      ],
+      "choices": [
+        {
+          "id": "inspect_lever",
+          "label": "Inspect the suspicious lever",
+          "next_scene": "lever_room",
+          "achievement_id": "corridor-cartographer",
+          "xp_reward": 50,
+          "tags": ["exploration"]
+        },
+        {
+          "id": "arcane_corridor",
+          "label": "March toward the arcane hum",
+          "next_scene": "arcane_lab",
+          "achievement_id": "logic-lantern",
+          "xp_reward": 50,
+          "tags": ["mystery"]
+        },
+        {
+          "id": "open_mimic",
+          "label": "Open the door marked 'Definitely Not A Mimic'",
+          "next_scene": "mimic_hall",
+          "achievement_id": "dramatic-sigh",
+          "xp_reward": 25,
+          "tags": ["chaos"]
+        }
+      ]
+    },
+    {
+      "id": "lever_room",
+      "title": "Levers and Ledgerdemain",
+      "narration": [
+        "The lever is attached to a wall of gears that squeal in protest. A hidden compartment opens, revealing a maintenance crawlway and a warning etched in goblin shorthand.",
+        "Keith snickers, betting five gold you pull something you shouldn't."
+      ],
+      "choices": [
+        {
+          "id": "crawlspace",
+          "label": "Dive into the maintenance crawlway",
+          "next_scene": "crawlspace",
+          "xp_reward": 75,
+          "tags": ["stealth"]
+        },
+        {
+          "id": "reverse_lever",
+          "label": "Reverse the lever to see what happens",
+          "next_scene": "intro",
+          "achievement_id": "duplicate-dodger",
+          "xp_reward": 25,
+          "tags": ["chaos"]
+        }
+      ]
+    },
+    {
+      "id": "arcane_lab",
+      "title": "Arcane Laboratory",
+      "narration": [
+        "Crackling runes ignite along the floor. A spectral lecturer begins a monotone welcome about workplace safety in hazardous magical environments.",
+        "You spy a console with glowing runes and a glass case filled with swirling potions."
+      ],
+      "choices": [
+        {
+          "id": "study_console",
+          "label": "Study the rune console",
+          "next_scene": "console_puzzle",
+          "xp_reward": 60,
+          "tags": ["puzzle"],
+          "check": {
+            "ability": "int",
+            "dc": 13,
+            "success_scene": "console_puzzle",
+            "failure_scene": "console_failure",
+            "success_xp": 80,
+            "failure_xp": 20,
+            "note": "Arcane comprehension"
+          }
+        },
+        {
+          "id": "grab_potion",
+          "label": "Grab the shiniest potion",
+          "next_scene": "potion_room",
+          "achievement_id": "pun-powered",
+          "xp_reward": 40,
+          "tags": ["risk"]
+        }
+      ]
+    },
+    {
+      "id": "mimic_hall",
+      "title": "Definitely A Mimic",
+      "narration": [
+        "The door, of course, was a mimic. Fortunately it’s unionised and only lightly nibbles your gauntlet as a greeting.",
+        "Keith applauds your commitment to chaos and points out a hallway decorated with teeth marks."
+      ],
+      "choices": [
+        {
+          "id": "befriend_mimic",
+          "label": "Attempt to befriend the mimic",
+          "next_scene": "mimic_friend",
+          "xp_reward": 80,
+          "tags": ["social"]
+        },
+        {
+          "id": "retreat",
+          "label": "Retreat and reconsider your life choices",
+          "next_scene": "intro",
+          "xp_reward": 20
+        }
+      ]
+    },
+    {
+      "id": "crawlspace",
+      "title": "Goblin Crawlspace",
+      "narration": [
+        "The crawlway smells like stale rations and ambition. You discover schematics of the dungeon along with goblin doodles mocking upper management.",
+        "One sketch highlights a secret elevator that bypasses two levels."
+      ],
+      "choices": [
+        {
+          "id": "take_elevator",
+          "label": "Activate the secret elevator",
+          "next_scene": "elevator",
+          "xp_reward": 100,
+          "tags": ["exploration", "shortcut"]
+        },
+        {
+          "id": "return_intro",
+          "label": "Crawl back to the main chamber",
+          "next_scene": "intro",
+          "xp_reward": 25
+        }
+      ]
+    },
+    {
+      "id": "console_puzzle",
+      "title": "Rune Console Triumph",
+      "narration": [
+        "Your fingers dance over the glyphs with academic flourish. The console emits a satisfied chime and rewards you with a diagnostic map of the wing.",
+        "Keith jots down your name under 'wizardly overachievers'."
+      ],
+      "choices": [
+        {
+          "id": "follow_map",
+          "label": "Follow the diagnostic map",
+          "next_scene": "elevator",
+          "xp_reward": 40
+        }
+      ]
+    },
+    {
+      "id": "console_failure",
+      "title": "Arcane Misfire",
+      "narration": [
+        "The console pulses angrily, blasting you with a harmless yet humiliating spray of glitter. Keith narrates the mishap with award-winning sarcasm.",
+        "A maintenance sprite appears, muttering that you should probably head back to orientation."
+      ],
+      "choices": [
+        {
+          "id": "retreat_console",
+          "label": "Retreat to the main chamber",
+          "next_scene": "intro",
+          "xp_reward": 10
+        }
+      ]
+    }
+  ]
+}

@@ -31,6 +31,16 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
    ```
    Start a conversation with your bot, use `/mode narrator` or `/mode explain`, and DMK will greet you with achievements on every major response.
 
+5. **Create your character for story mode**
+   ```bash
+   /character new
+   /character name Rin Starweaver
+   /character race Elf
+   /character class Wizard
+   /character finalize
+   ```
+   Once finalized, switch to story mode with `/mode story`, use `/story` to recap the current scene, `/choose <id>` to pick options, and `/roll <expression>` for manual dice checks.
+
 ## Project Layout
 
 - `src/engine/` — achievement runtime, mode router, storage helpers.
@@ -47,7 +57,17 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
 - **Narrator**: cinematic narration after every user message. Default mode.
 - **Achievements**: short, achievement-first responses for quick banter.
 - **Explain**: artifact/file analysis with comedic tangents (uploads or `/mode explain`).
-- **Story**: (stub) interactive story thread; will expand with branching choices.
+- **Story**: fully interactive dungeon crawl that tracks character sheets, XP, and dice checks. DMK presents numbered choices, calls out stored rolls, and remembers your progress.
+
+### Story & Dice Commands
+
+- `/character` — manage your character sheet (name, race, class, ability scores, backstory).
+- `/profile` — quick readout of the current character sheet.
+- `/inventory` — view or adjust your gear (`/inventory add torch 2`).
+- `/story` — recap the active scene and available choices.
+- `/choose <id>` — pick a story option (equivalent to replying with the text).
+- `/roll <expression>` — roll dice with advantage/disadvantage or ability modifiers (e.g. `/roll 1d20adv+3`, `/roll str`). Stored rolls are consumed automatically on the next matching check.
+- `/history [n]` — list recent dice rolls (defaults to 5).
 
 All major responses start with an achievement block (`Title`, `Description`, `Reward`, `Rarity`) followed by 1–2 paragraphs of text. The runtime enforces cooldowns and dedupes via SQLite so users earn each achievement deliberately.
 
@@ -58,6 +78,7 @@ All major responses start with an achievement block (`Title`, `Description`, `Re
 | `make setup` | Install dependencies, configure pre-commit hooks, copy `.env.example`. |
 | `make lint` | Run `ruff`, `black`, and `mypy`. |
 | `make test` | Execute pytest with coverage (`pytest --cov=src`). |
+| `uv run python tools/validate_story.py` | Validate that story JSON files reference valid scenes. |
 | `make dev` | Launches local TMUX session with runtime + bot watchers (customize as needed). |
 
 Ensure `make lint` and `make test` pass before opening a PR.

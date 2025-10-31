@@ -10,6 +10,15 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from ..config import get_settings
+from ..engine.character import (
+    SUPPORTED_CLASSES,
+    SUPPORTED_RACES,
+    CharacterManager,
+    ability_modifier,
+    profile_ready,
+    required_fields_missing,
+)
+from ..utils.dice import DiceParseError, parse_dice_expression, roll_instruction
 from ..engine.modes import ModeRequest, ModeRouter
 from ..engine.storage import SessionState, SQLiteStore
 
@@ -24,6 +33,7 @@ class TelegramBot:
 
         self.store = SQLiteStore()
         self.store.migrate()
+        self.character_manager = CharacterManager(self.store)
         self.router = ModeRouter(store=self.store)
 
     def build_application(self) -> Application:
@@ -36,6 +46,13 @@ class TelegramBot:
 
         application.add_handler(CommandHandler("start", self.handle_start))
         application.add_handler(CommandHandler("mode", self.handle_mode))
+        application.add_handler(CommandHandler("character", self.handle_character))
+        application.add_handler(CommandHandler("profile", self.handle_profile))
+        application.add_handler(CommandHandler("inventory", self.handle_inventory))
+        application.add_handler(CommandHandler("roll", self.handle_roll))
+        application.add_handler(CommandHandler("story", self.handle_story_status))
+        application.add_handler(CommandHandler("choose", self.handle_choose))
+        application.add_handler(CommandHandler("history", self.handle_history))
         application.add_handler(CommandHandler("set", self.handle_set))
         attachment_filter = filters.Document.ALL | filters.PHOTO
         application.add_handler(MessageHandler(attachment_filter, self.handle_attachment))
@@ -76,6 +93,308 @@ class TelegramBot:
             triggers=triggers,
             session_overrides=overrides,
         )
+
+    async def handle_character(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        args = context.args or []
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        session_state = self.store.upsert_session(session_id, user_id)
+        profile = self.character_manager.ensure_profile(session_id, user_id)
+
+        if not args:
+            await message.reply_text(self._character_summary(profile, session_state.story_mode_enabled))
+            return
+
+        command = args[0].lower()
+        remainder = args[1:]
+        try:
+            if command in {"new", "reset"}:
+                profile = self.character_manager.reset_profile(session_id, user_id)
+                self.store.upsert_session(session_id, user_id, story_mode_enabled=False)
+                response = "Character sheet reset. Let's rebuild this hero from scratch."
+            elif command == "name":
+                value = " ".join(remainder).strip()
+                if not value:
+                    raise ValueError("Provide a name after `/character name`.")
+                profile = self.character_manager.update_basic_field(
+                    session_id, user_id, character_name=value
+                )
+                response = f"Name set to {value}."
+            elif command == "pronouns":
+                value = " ".join(remainder).strip()
+                if not value:
+                    raise ValueError("Provide pronouns after `/character pronouns`.")
+                profile = self.character_manager.update_basic_field(
+                    session_id, user_id, pronouns=value
+                )
+                response = f"Pronouns set to {value}."
+            elif command == "race":
+                value = " ".join(remainder).strip()
+                if not value:
+                    raise ValueError("Provide a race after `/character race`.")
+                profile = self.character_manager.update_basic_field(
+                    session_id, user_id, race=value
+                )
+                if value.lower() not in SUPPORTED_RACES:
+                    response = (
+                        f"Race set to {value}. Keith hasn't seen that in the handbook, "
+                        "but he'll roll with it."
+                    )
+                else:
+                    response = f"Race set to {value.title()}."
+            elif command in {"class", "role"}:
+                value = " ".join(remainder).strip()
+                if not value:
+                    raise ValueError("Provide a class after `/character class`.")
+                profile = self.character_manager.update_basic_field(
+                    session_id, user_id, character_class=value
+                )
+                if value.lower() not in SUPPORTED_CLASSES:
+                    response = (
+                        f"Class set to {value}. Keith will improvise the spell list as needed."
+                    )
+                else:
+                    response = f"Class set to {value.title()}."
+            elif command == "backstory":
+                value = " ".join(remainder).strip()
+                if not value:
+                    raise ValueError("Share a few words of backstory after `/character backstory`.")
+                profile = self.character_manager.update_basic_field(
+                    session_id, user_id, backstory=value[:1024]
+                )
+                response = "Backstory stored. Keith promises only mild embellishments."
+            elif command in {"ability", "stat"}:
+                if len(remainder) < 2:
+                    raise ValueError("Usage: `/character ability <stat> <value>`.")
+                ability = remainder[0]
+                try:
+                    value = int(remainder[1])
+                except ValueError as exc:  # pragma: no cover - defensive
+                    raise ValueError("Ability scores must be integers.") from exc
+                profile = self.character_manager.set_ability_score(session_id, user_id, ability, value)
+                response = f"{ability.upper()} set to {value}."
+            elif command in {"finalize", "ready"}:
+                profile = self.character_manager.finalize_profile(session_id, user_id)
+                response = (
+                    "Character locked in! Story mode is now enabled. "
+                    "Use `/mode story` to embark on the campaign."
+                )
+            elif command in {"show", "status", "sheet"}:
+                response = self._character_summary(profile, session_state.story_mode_enabled)
+            elif command == "help":
+                response = self._character_help()
+            else:
+                response = (
+                    "Unknown subcommand. Try `/character help` for available options."
+                )
+        except ValueError as exc:
+            response = f"⚠️ {exc}"
+        await message.reply_text(response)
+
+    async def handle_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        session_state = self.store.upsert_session(session_id, user_id)
+        profile = self.character_manager.ensure_profile(session_id, user_id)
+        await message.reply_text(self._character_summary(profile, session_state.story_mode_enabled))
+
+    async def handle_inventory(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        args = context.args or []
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        self.store.upsert_session(session_id, user_id)
+        profile = self.character_manager.ensure_profile(session_id, user_id)
+
+        try:
+            if not args or args[0].lower() in {"show", "list"}:
+                response = self.character_manager.render_inventory(profile)
+            elif args[0].lower() == "add":
+                item, quantity = self._parse_inventory_args(args[1:])
+                profile = self.character_manager.add_inventory_item(
+                    session_id, user_id, item, quantity
+                )
+                response = f"Added {quantity} x {item}."
+            elif args[0].lower() in {"remove", "drop"}:
+                item, quantity = self._parse_inventory_args(args[1:])
+                profile = self.character_manager.remove_inventory_item(
+                    session_id, user_id, item, quantity
+                )
+                response = f"Removed {quantity} x {item}."
+            elif args[0].lower() == "clear":
+                profile = self.character_manager.clear_inventory(session_id, user_id)
+                response = "Inventory cleared. Keith sweeps the bag dramatically."
+            else:
+                response = (
+                    "Usage: /inventory [show|add|remove|clear] — e.g. `/inventory add torch 2`"
+                )
+        except ValueError as exc:
+            response = f"⚠️ {exc}"
+
+        await message.reply_text(response)
+
+    async def handle_story_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        session_state = self.store.upsert_session(session_id, user_id)
+        profile = self.character_manager.ensure_profile(session_id, user_id)
+        if not profile_ready(profile) or not session_state.story_mode_enabled:
+            await message.reply_text(
+                "Finish character creation (`/character finalize`) before checking the story state."
+            )
+            return
+        scene = self.router.story_engine.current_scene(session_id, profile)
+        state = self.store.get_story_state(session_id)
+        await message.reply_text(self._format_story_scene(scene, state))
+
+    async def handle_choose(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        args = context.args or []
+        if not args:
+            await message.reply_text("Usage: /choose <option number or id>")
+            return
+        choice_text = " ".join(args)
+        await self._dispatch(
+            update,
+            choice_text,
+            triggers=("event.story.choice_cmd", "event.message"),
+            metadata={"command": "choose"},
+        )
+
+    async def handle_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        limit = 5
+        if context.args and context.args[0].isdigit():
+            limit = max(1, min(20, int(context.args[0])))
+
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        rolls = self.store.fetch_recent_story_rolls(session_id, limit=limit)
+        if not rolls:
+            await message.reply_text("No rolls logged yet. Try `/roll 1d20` to christen the dice.")
+            return
+        lines = ["Recent Rolls:"]
+        for roll in rolls:
+            timestamp = roll.created_at.astimezone().strftime("%H:%M:%S")
+            detail = roll.result_detail or {}
+            ability = detail.get("ability")
+            ability_part = f" [{ability.upper()}]" if ability else ""
+            lines.append(
+                f"{timestamp}{ability_part} {roll.expression} → {roll.result_total}"
+            )
+        await message.reply_text("\n".join(lines))
+
+    async def handle_roll(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        expr_text = " ".join(context.args or []).strip()
+        if not expr_text:
+            await message.reply_text(
+                "Usage: /roll <expression> (e.g., /roll 1d20+3 or /roll str)"
+            )
+            return
+
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        session_state = self.store.upsert_session(session_id, user_id)
+        profile = self.character_manager.ensure_profile(session_id, user_id)
+
+        try:
+            instruction = parse_dice_expression(expr_text)
+        except DiceParseError as exc:
+            await message.reply_text(f"⚠️ {exc}")
+            return
+
+        ability_mod = 0
+        if instruction.ability:
+            ability_mod = ability_modifier(profile.ability_scores.get(instruction.ability, 10))
+
+        result = roll_instruction(instruction, ability_modifier=ability_mod)
+        self.store.log_story_roll(
+            session_id=session_id,
+            user_id=user_id,
+            expression=expr_text,
+            result_total=result.total,
+            result_detail={
+                "rolls": result.rolls,
+                "kept": result.kept,
+                "modifier": instruction.modifier,
+                "ability_modifier": ability_mod,
+                "advantage": instruction.advantage,
+                "ability": instruction.ability,
+            },
+        )
+
+        state = self.store.get_story_state(session_id)
+        if state is not None and instruction.ability:
+            flags = dict(state.flags)
+            flags["pending_roll"] = {
+                "ability": instruction.ability,
+                "rolls": result.rolls,
+                "kept": result.kept,
+                "modifier": instruction.modifier,
+                "ability_modifier": ability_mod,
+                "advantage": instruction.advantage,
+                "total": result.total,
+            }
+            self.store.upsert_story_state(session_id, flags=flags)
+
+        advantage_note = ""
+        if instruction.advantage == 1:
+            advantage_note = " (advantage)"
+        elif instruction.advantage == -1:
+            advantage_note = " (disadvantage)"
+
+        roll_line = ", ".join(str(r) for r in result.rolls)
+        kept_line = ", ".join(str(k) for k in result.kept)
+        lines = [f"🎲 Roll{advantage_note}: {expr_text}"]
+        if instruction.ability:
+            lines.append(
+                f"Ability modifier {instruction.ability.upper()}: {ability_mod:+}"
+            )
+        lines.append(f"Rolls: {roll_line}")
+        if kept_line != roll_line:
+            lines.append(f"Kept: {kept_line}")
+        modifier_total = instruction.modifier + ability_mod
+        if modifier_total:
+            lines.append(f"Modifiers applied: {modifier_total:+}")
+        lines.append(f"Total: {result.total}")
+
+        if instruction.ability:
+            lines.append("Stored for the next matching ability check.")
+
+        await message.reply_text("\n".join(lines))
 
     async def handle_set(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message:
@@ -254,6 +573,74 @@ class TelegramBot:
         # Ensure a user row exists before creating a session to satisfy FK constraints.
         self.store.ensure_user(user_id)
         return self.store.upsert_session(session_id, user_id)
+
+    def _character_summary(self, profile, story_ready: bool) -> str:
+        summary = self.character_manager.render_profile(profile)
+        missing = required_fields_missing(profile)
+        lines = [summary, ""]
+        if missing:
+            lines.append("Missing fields: " + ", ".join(missing))
+        else:
+            if story_ready:
+                lines.append("Story mode active. Use `/mode story` to jump in.")
+            else:
+                lines.append("All core fields set. Run `/character finalize` to enable story mode.")
+        lines.append(self._character_help(short=True))
+        return "\n".join(lines)
+
+    def _character_help(self, short: bool = False) -> str:
+        lines = [
+            "Commands:",
+            "  /character show — display current sheet",
+            "  /character name <value>",
+            "  /character pronouns <value>",
+            "  /character race <value>",
+            "  /character class <value>",
+            "  /character ability <stat> <value>",
+            "  /character backstory <text>",
+            "  /character finalize — lock in and enable story mode",
+            "  /character reset — start over",
+            "  /inventory [show|add|remove|clear]",
+        ]
+        if short:
+            return "\n".join(lines[:5])
+        return "\n".join(lines)
+
+    def _format_story_scene(self, scene, state) -> str:
+        narration = "\n".join(scene.narration)
+        lines = [f"Scene: {scene.title} ({scene.id})", narration]
+        if scene.choices:
+            lines.append("Choices:")
+            for idx, choice in enumerate(scene.choices, start=1):
+                lines.append(f"  {idx}. {choice.label} (id={choice.id})")
+        else:
+            lines.append("No scripted choices here—improvise!")
+
+        pending_roll = None
+        if state and state.flags:
+            pending_roll = state.flags.get("pending_roll")
+        if pending_roll:
+            ability = pending_roll.get("ability", "?").upper()
+            total = pending_roll.get("total")
+            lines.append(f"Pending roll stored for {ability}: total {total}")
+        lines.append("Use `/choose <id>` or reply with the option text to proceed.")
+        return "\n".join([line for line in lines if line])
+
+    def _parse_inventory_args(self, parts: list[str]) -> tuple[str, int]:
+        if not parts:
+            raise ValueError("Specify an item, e.g. `/inventory add torch 2`.")
+        quantity = 1
+        if parts[-1].isdigit():
+            quantity = int(parts[-1])
+            item_parts = parts[:-1]
+        else:
+            item_parts = parts
+        item = " ".join(item_parts).strip()
+        if not item:
+            raise ValueError("Item name cannot be empty.")
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive.")
+        return item, quantity
 
 
 def summarize_csv(buffer: io.BytesIO) -> str:

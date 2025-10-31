@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Settings
+from src.engine.character import CharacterManager
 from src.engine.modes import ModeRequest, ModeRouter
 from src.engine.storage import SQLiteStore
 
@@ -77,3 +78,36 @@ def test_mode_router_offline_fallback(tmp_path) -> None:
     response = router.handle(request)
     assert "Keith" in response.text
     assert "uplink" in response.text or "oracle" in response.text
+
+
+def test_story_mode_requires_finalize(tmp_path) -> None:
+    settings = make_settings(tmp_path)
+    store = make_store(settings)
+    agent = FakeAgent("Story paragraph.")
+    router = ModeRouter(store=store, agent=agent, settings=settings)
+
+    request = ModeRequest(
+        user_id="story-user",
+        session_id="story-session",
+        message="1",
+        mode="story",
+        triggers=("event.message",),
+    )
+    response = router.handle(request)
+    assert "storybook" in response.text
+
+    manager = CharacterManager(store)
+    manager.ensure_profile("story-session", "story-user")
+    manager.update_basic_field(
+        "story-session",
+        "story-user",
+        character_name="Hero",
+        race="Elf",
+        character_class="Ranger",
+    )
+    manager.finalize_profile("story-session", "story-user")
+
+    response_ready = router.handle(request)
+    assert "Story paragraph." in response_ready.text
+    state = store.get_story_state("story-session")
+    assert state is not None and state.current_scene is not None

@@ -40,5 +40,13 @@
     "achievements",
     "rpg",
     "telegram"
-  ]
+  ],
+  "mechanics": {
+    "story_modes": [
+      "orientation_campaign"
+    ],
+    "uses_stats": true,
+    "supports_dice": true,
+    "notes": "Expect to reference XP, levels, and ability checks in narration."
+  }
 }
