@@ -142,6 +142,77 @@
       ]
     },
     {
+      "id": "potion_room",
+      "title": "Potion Roulette",
+      "narration": [
+        "You uncork the shimmering vial. It smells like citrus and imminent consequences.",
+        "Keith watches with popcorn as the liquid fizzes and invites you to pick a follow-up action." 
+      ],
+      "choices": [
+        {
+          "id": "bottle_sample",
+          "label": "Pocket a sample for later",
+          "next_scene": "intro",
+          "xp_reward": 30,
+          "tags": ["inventory"]
+        },
+        {
+          "id": "drink_it",
+          "label": "Chug the potion like a dare",
+          "next_scene": "intro",
+          "xp_reward": 50,
+          "tags": ["chaos"],
+          "achievement_id": "pun-powered"
+        }
+      ]
+    },
+    {
+      "id": "mimic_friend",
+      "title": "Unionized Mimic Buddy",
+      "narration": [
+        "The mimic decides your gauntlet tastes like loyalty and agrees to follow you—at least until the next break.",
+        "Keith awards you a dubious ally and a pamphlet on mimic labor rights." 
+      ],
+      "choices": [
+        {
+          "id": "send_mimic_scout",
+          "label": "Send the mimic ahead as a scout",
+          "next_scene": "elevator",
+          "xp_reward": 80,
+          "tags": ["ally"]
+        },
+        {
+          "id": "return_with_friend",
+          "label": "Return to the main chamber with your new pal",
+          "next_scene": "intro",
+          "xp_reward": 40
+        }
+      ]
+    },
+    {
+      "id": "elevator",
+      "title": "Secret Elevator",
+      "narration": [
+        "The elevator hums to life, lowering you toward a deeper level as enchanted elevator music kicks in.",
+        "A control panel asks whether you want to continue downward or regroup." 
+      ],
+      "choices": [
+        {
+          "id": "descend_deeper",
+          "label": "Descend to the next level",
+          "next_scene": "intro",
+          "xp_reward": 75,
+          "tags": ["progress"]
+        },
+        {
+          "id": "ride_back",
+          "label": "Ride back to the main hall",
+          "next_scene": "intro",
+          "xp_reward": 20
+        }
+      ]
+    },
+    {
       "id": "console_puzzle",
       "title": "Rune Console Triumph",
       "narration": [
