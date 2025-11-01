@@ -39,7 +39,8 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
    /character class Wizard
    /character finalize
    ```
-   Once finalized, switch to story mode with `/mode story`, use `/story` to recap the current scene, `/choose <id>` to pick options, and `/roll <expression>` for manual dice checks.
+   Keith auto-rolls all six ability scores for you when you run `/character new` (or `/restart`).
+   Once finalized, switch to story mode with `/mode story`, use `/story` to recap the current scene, `/choose <id>` to pick options, and `/roll <expression>` for manual dice checks (manual rolls are saved and applied to the next matching ability check).
 
 ## Project Layout
 
@@ -69,6 +70,7 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
 - `/choose <id>` — pick a story option (equivalent to replying with the text).
 - `/roll <expression>` — roll dice with advantage/disadvantage or ability modifiers (e.g. `/roll 1d20adv+3`, `/roll str`). Stored rolls are consumed automatically on the next matching check.
 - `/history [n]` — list recent dice rolls (defaults to 5).
+- Story choices tagged with things like `chaos`, `risk`, `puzzle`, etc. trigger auto ability checks; Keith announces the roll result (and whether it was auto-rolled or came from your stored `/roll`).
 
 All major responses start with an achievement block (`Title`, `Description`, `Reward`, `Rarity`) followed by 1–2 paragraphs of text. The runtime enforces cooldowns and dedupes via SQLite so users earn each achievement deliberately.
 
