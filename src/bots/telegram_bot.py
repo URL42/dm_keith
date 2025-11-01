@@ -138,14 +138,6 @@ class TelegramBot:
                     session_id, user_id, character_name=value
                 )
                 response = f"Name set to {value}."
-            elif command == "pronouns":
-                value = " ".join(remainder).strip()
-                if not value:
-                    raise ValueError("Provide pronouns after `/character pronouns`.")
-                profile = self.character_manager.update_basic_field(
-                    session_id, user_id, pronouns=value
-                )
-                response = f"Pronouns set to {value}."
             elif command == "race":
                 value = " ".join(remainder).strip()
                 if not value:
@@ -633,7 +625,6 @@ class TelegramBot:
             "Commands:",
             "  /character show — display current sheet",
             "  /character name <value>",
-            "  /character pronouns <value>",
             "  /character race <value>",
             "  /character class <value>",
             "  /character ability <stat> <value>",

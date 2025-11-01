@@ -61,7 +61,8 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
 
 ### Story & Dice Commands
 
-- `/character` — manage your character sheet (name, race, class, ability scores, backstory).
+- `/character` — manage your character sheet (Keith auto-rolls stats; you set name/race/class/backstory).
+- `/restart` — re-roll stats and restart the campaign from the top.
 - `/profile` — quick readout of the current character sheet.
 - `/inventory` — view or adjust your gear (`/inventory add torch 2`).
 - `/story` — recap the active scene and available choices.

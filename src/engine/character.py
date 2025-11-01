@@ -247,7 +247,6 @@ class CharacterManager:
 
         lines = ["Character Sheet"]
         lines.append(f"Name: {profile.character_name or 'Unset'}")
-        lines.append(f"Pronouns: {profile.pronouns or 'Unset'}")
         lines.append(f"Race: {profile.race or 'Unset'}")
         lines.append(f"Class: {profile.character_class or 'Unset'}")
         lines.append(f"Level: {profile.level}  XP: {profile.experience}")

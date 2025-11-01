@@ -78,6 +78,7 @@ class StoryTurnResult:
     triggers: Sequence[str]
     metadata: dict
     check_outcome: Optional[StoryCheckOutcome] = None
+    auto_generated_check: bool = False
 
 
 class StoryEngine:
@@ -177,11 +178,12 @@ class StoryEngine:
         check_outcome: Optional[StoryCheckOutcome] = None
         level_up: Optional[dict] = None
 
+        auto_generated = False
         if choice:
             triggers.insert(0, "event.story.choice")
             metadata["choice_id"] = choice.id
             metadata["choice_label"] = choice.label
-            next_scene, check_outcome, level_up, xp_awarded, auto_generated = self._apply_choice(
+            next_scene, check_outcome, level_up, xp_awarded, auto_generated, active_check = self._apply_choice(
                 session_id, profile, state, choice
             )
             attachments.append(self._format_choice_log(choice))
@@ -217,6 +219,7 @@ class StoryEngine:
             triggers=tuple(dict.fromkeys(triggers)),  # preserve order, dedupe
             metadata=metadata,
             check_outcome=check_outcome,
+            auto_generated_check=auto_generated,
         )
 
     def _apply_choice(
@@ -225,7 +228,7 @@ class StoryEngine:
         profile: StoryProfile,
         state: StoryState,
         choice: StoryChoice,
-    ) -> tuple[StoryScene, Optional[StoryCheckOutcome], Optional[dict], int, bool]:
+    ) -> tuple[StoryScene, Optional[StoryCheckOutcome], Optional[dict], int, bool, Optional[StoryCheck]]:
         check_outcome: Optional[StoryCheckOutcome] = None
         level_up: Optional[dict] = None
         target_scene_id = choice.next_scene
@@ -285,7 +288,7 @@ class StoryEngine:
             flags=flags,
         )
         next_scene = self.scenes.get(target_scene_id, self.scenes[self.root_scene])
-        return next_scene, check_outcome, level_up, xp_award, auto_generated
+        return next_scene, check_outcome, level_up, xp_award, auto_generated, active_check
 
     def _match_choice(
         self, user_input: str, choices: Sequence[StoryChoice]

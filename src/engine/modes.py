@@ -278,8 +278,9 @@ class ModeRouter:
             outcome = story_turn.check_outcome
             status = "success" if outcome.success else "failure"
             manual = " (manual)" if outcome.manual else ""
+            auto = " (auto)" if story_turn.auto_generated_check and not outcome.manual else ""
             lines.append(
-                f"Check: {outcome.ability.upper()}{manual} {status} — rolls {list(outcome.kept)} total {outcome.total} vs DC {outcome.difficulty_class}"
+                f"Check: {outcome.ability.upper()}{manual}{auto} {status} — rolls {list(outcome.kept)} total {outcome.total} vs DC {outcome.difficulty_class}"
             )
         if story_turn.scene.choices:
             lines.append("Choices:")
