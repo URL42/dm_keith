@@ -64,6 +64,7 @@ def test_auto_check_inferred_from_tags(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr("src.engine.story.runtime.random.randint", lambda _a, _b: 15)
 
     result = engine.process_turn(session_id, user_id, profile, "1")
+    assert result is not None
     assert result.auto_generated_check is True
     assert result.check_outcome is not None
     assert result.check_outcome.ability == "cha"

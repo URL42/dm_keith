@@ -162,11 +162,11 @@ class StoryEngine:
         user_id: str,
         profile: StoryProfile,
         raw_input: str,
-    ) -> StoryTurnResult:
+    ) -> Optional[StoryTurnResult]:
         state = self.ensure_state(session_id, profile)
         scene = self.scenes.get(state.current_scene or self.root_scene)
         if scene is None:
-            scene = self.scenes[self.root_scene]
+            return None
 
         choice = self._match_choice(raw_input, scene.choices)
         triggers = ["event.story.turn", "event.message"]
@@ -180,6 +180,7 @@ class StoryEngine:
 
         auto_generated = False
         if choice:
+            auto_generated = False
             triggers.insert(0, "event.story.choice")
             metadata["choice_id"] = choice.id
             metadata["choice_label"] = choice.label

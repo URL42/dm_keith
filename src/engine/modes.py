@@ -39,6 +39,18 @@ AUTO_CHECK_TAGS = {
     "shortcut": ("dex", 12),
 }
 
+DEFAULT_NARRATION_ACHIEVEMENT = Achievement(
+    id="narration-only",
+    title="Scene Continues",
+    description="Keith presses on with the tale without handing out loot.",
+    reward="Story momentum",
+    rarity="common",
+    tags=("narration",),
+    triggers=("event.message",),
+    cooldown_sec=0,
+    once_per_user=False,
+)
+
 
 @dataclass(frozen=True)
 class ModeRequest:
@@ -113,6 +125,8 @@ class ModeRouter:
                 profile,
                 request.message,
             )
+            if story_turn is None:
+                return self._empty_story_response(request, session_state.mode)
             profile = self.store.get_story_profile(request.session_id) or profile
             story_context = self._story_context_text(profile, story_turn)
             if story_context:
@@ -124,7 +138,7 @@ class ModeRouter:
                 if trig not in combined_triggers:
                     combined_triggers.append(trig)
             triggers = tuple(combined_triggers)
-            metadata.setdefault("story", {}).update(story_turn.metadata)
+            metadata.setdefault("story", {}).update(story_turn.metadata or {})
 
         should_award = self._should_award(session_state, request, story_turn)
 
@@ -190,11 +204,12 @@ class ModeRouter:
         attachments: Sequence[str],
         fallback_context: Optional[str],
     ) -> str:
+        effective_achievement = achievement or DEFAULT_NARRATION_ACHIEVEMENT
         try:
             return self.agent.generate_reply(
                 user_message=agent_payload,
                 mode=mode,
-                achievement=achievement,
+                achievement=effective_achievement,
                 toggle_snapshot=toggle_snapshot,
                 history=request.history,
                 attachments=attachments,
@@ -333,6 +348,21 @@ class ModeRouter:
         ) & 0xFFFF
         roll = seed / 0xFFFF
         return roll < probability
+
+
+    def _empty_story_response(self, request: ModeRequest, mode: AllowedMode) -> ModeResponse:
+        achievement = self._registry_index.get("session-zero-hero", self._registry[0])
+        block = format_achievement_block(achievement)
+        body = (
+            "Keith flips the script and admits the scene isn't ready yet. Reply with a number or keyword to pick an option."
+        )
+        return ModeResponse(
+            text=f"{block}\n\n{body}",
+            achievement_id=achievement.id,
+            mode=mode,
+            was_new=False,
+            trigger="event.story.setup",
+        )
 
     def _story_setup_response(self, request: ModeRequest, mode: AllowedMode) -> ModeResponse:
         achievement = self._registry_index.get("session-zero-hero", self._registry[0])
