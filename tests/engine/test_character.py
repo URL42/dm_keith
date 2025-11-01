@@ -34,6 +34,8 @@ def test_character_manager_levels_and_scores(tmp_path) -> None:
     assert profile.experience == 350
     assert level_from_xp(profile.experience) == profile.level
 
+    profile = manager.assign_random_ability_scores(session_id, user_id)
+    assert all(4 <= score <= 20 for score in profile.ability_scores.values())
     profile = manager.add_inventory_item(session_id, user_id, "torch", quantity=2)
     assert profile.inventory["torch"] == 2
     profile = manager.remove_inventory_item(session_id, user_id, "torch", quantity=1)

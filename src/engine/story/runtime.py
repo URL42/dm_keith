@@ -11,6 +11,20 @@ from typing import Any, Optional, Sequence
 from ..storage import SQLiteStore, StoryProfile, StoryState
 from ..character import ABILITY_KEYS, ability_modifier, level_from_xp
 
+AUTO_CHECK_TAGS = {
+    "chaos": ("cha", 12),
+    "risk": ("dex", 12),
+    "puzzle": ("int", 13),
+    "stealth": ("dex", 13),
+    "social": ("cha", 12),
+    "ally": ("cha", 11),
+    "exploration": ("wis", 11),
+    "combat": ("str", 14),
+    "magic": ("int", 14),
+    "inventory": ("wis", 10),
+    "shortcut": ("dex", 12),
+}
+
 
 @dataclass(frozen=True)
 class StoryChoice:
@@ -167,7 +181,7 @@ class StoryEngine:
             triggers.insert(0, "event.story.choice")
             metadata["choice_id"] = choice.id
             metadata["choice_label"] = choice.label
-            next_scene, check_outcome, level_up, xp_awarded = self._apply_choice(
+            next_scene, check_outcome, level_up, xp_awarded, auto_generated = self._apply_choice(
                 session_id, profile, state, choice
             )
             attachments.append(self._format_choice_log(choice))
@@ -188,6 +202,8 @@ class StoryEngine:
                     "dc": check_outcome.difficulty_class,
                     "success": check_outcome.success,
                     "manual": check_outcome.manual,
+                    "auto": auto_generated,
+                    "note": getattr(active_check, "note", None),
                 }
                 attachments.append(self._format_check_attachment(check_outcome))
 
@@ -209,7 +225,7 @@ class StoryEngine:
         profile: StoryProfile,
         state: StoryState,
         choice: StoryChoice,
-    ) -> tuple[StoryScene, Optional[StoryCheckOutcome], Optional[dict], int]:
+    ) -> tuple[StoryScene, Optional[StoryCheckOutcome], Optional[dict], int, bool]:
         check_outcome: Optional[StoryCheckOutcome] = None
         level_up: Optional[dict] = None
         target_scene_id = choice.next_scene
@@ -217,16 +233,29 @@ class StoryEngine:
 
         flags = dict(state.flags)
 
-        if choice.check:
+        active_check = choice.check
+        auto_generated = False
+        if active_check is None:
+            inferred = self._infer_auto_check(choice)
+            if inferred:
+                active_check = inferred
+                auto_generated = True
+
+        if active_check:
             check_outcome, flags = self._perform_check(
-                session_id, profile, choice.check, flags
+                session_id, profile, active_check, flags
             )
             if check_outcome.success:
-                target_scene_id = choice.check.success_scene or target_scene_id
-                xp_award = choice.check.success_xp or xp_award
+                target_scene_id = active_check.success_scene or target_scene_id
+                xp_award = active_check.success_xp or xp_award
             else:
-                target_scene_id = choice.check.failure_scene or target_scene_id
-                xp_award = choice.check.failure_xp or 0
+                if active_check.failure_scene:
+                    target_scene_id = active_check.failure_scene
+                failure_xp = active_check.failure_xp
+                if failure_xp is not None:
+                    xp_award = failure_xp
+                elif auto_generated:
+                    xp_award = max(0, xp_award // 2)
 
         history = list(state.scene_history)
         history.append(target_scene_id)
@@ -256,7 +285,7 @@ class StoryEngine:
             flags=flags,
         )
         next_scene = self.scenes.get(target_scene_id, self.scenes[self.root_scene])
-        return next_scene, check_outcome, level_up, xp_award
+        return next_scene, check_outcome, level_up, xp_award, auto_generated
 
     def _match_choice(
         self, user_input: str, choices: Sequence[StoryChoice]
@@ -279,6 +308,13 @@ class StoryEngine:
                 return choice
             if text in choice.label.lower():
                 return choice
+        return None
+
+    def _infer_auto_check(self, choice: StoryChoice) -> Optional[StoryCheck]:
+        for tag in choice.tags:
+            if tag in AUTO_CHECK_TAGS:
+                ability, dc = AUTO_CHECK_TAGS[tag]
+                return StoryCheck(ability=ability, difficulty_class=dc, note=f"auto:{tag}")
         return None
 
     def _perform_check(

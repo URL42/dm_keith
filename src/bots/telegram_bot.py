@@ -53,6 +53,7 @@ class TelegramBot:
         application.add_handler(CommandHandler("story", self.handle_story_status))
         application.add_handler(CommandHandler("choose", self.handle_choose))
         application.add_handler(CommandHandler("history", self.handle_history))
+        application.add_handler(CommandHandler("restart", self.handle_restart))
         application.add_handler(CommandHandler("set", self.handle_set))
         attachment_filter = filters.Document.ALL | filters.PHOTO
         application.add_handler(MessageHandler(attachment_filter, self.handle_attachment))
@@ -116,8 +117,19 @@ class TelegramBot:
         try:
             if command in {"new", "reset"}:
                 profile = self.character_manager.reset_profile(session_id, user_id)
+                profile = self.character_manager.assign_random_ability_scores(session_id, user_id)
+                profile = self.character_manager.clear_inventory(session_id, user_id)
                 self.store.upsert_session(session_id, user_id, story_mode_enabled=False)
-                response = "Character sheet reset. Let's rebuild this hero from scratch."
+                response = (
+                    "Fresh adventurer coming right up! I rolled 4–20 for each stat and emptied your pockets.\n\n"
+                    f"{self.character_manager.render_profile(profile)}\n\n"
+                    "Next steps:\n"
+                    "  • /character name <name>\n"
+                    "  • /character race <race>\n"
+                    "  • /character class <class>\n"
+                    "  • /character finalize (when you're ready for story mode)\n"
+                    "Need a mulligan later? /restart will reset the saga."
+                )
             elif command == "name":
                 value = " ".join(remainder).strip()
                 if not value:
@@ -310,6 +322,34 @@ class TelegramBot:
                 f"{timestamp}{ability_part} {roll.expression} → {roll.result_total}"
             )
         await message.reply_text("\n".join(lines))
+
+    async def handle_restart(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        message = update.message
+        if not message:
+            return
+        user_id = f"telegram:{update.effective_user.id if update.effective_user else 'anonymous'}"
+        session_id = f"telegram:{update.effective_chat.id if update.effective_chat else 'unknown'}"
+        display_name = update.effective_user.full_name if update.effective_user else None
+
+        self.store.ensure_user(user_id, display_name)
+        profile = self.character_manager.reset_profile(session_id, user_id)
+        profile = self.character_manager.assign_random_ability_scores(session_id, user_id)
+        profile = self.character_manager.clear_inventory(session_id, user_id)
+        self.store.upsert_session(session_id, user_id, mode="narrator", story_mode_enabled=False)
+        self.store.upsert_story_state(
+            session_id,
+            current_scene=None,
+            scene_history=[],
+            flags={},
+            stats={"xp": profile.experience, "level": profile.level},
+        )
+        summary = self.character_manager.render_profile(profile)
+        response = (
+            "Story reset! Keith tears up the previous script and hands you a fresh character sheet.\n\n"
+            f"{summary}\n\n"
+            "Rename and class-up with `/character name`, `/character race`, `/character class`, then `/character finalize` to rejoin the campaign."
+        )
+        await message.reply_text(response)
 
     async def handle_roll(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message = update.message
@@ -601,6 +641,7 @@ class TelegramBot:
             "  /character finalize — lock in and enable story mode",
             "  /character reset — start over",
             "  /inventory [show|add|remove|clear]",
+            "  /restart — reset story, stats, and inventory",
         ]
         if short:
             return "\n".join(lines[:5])

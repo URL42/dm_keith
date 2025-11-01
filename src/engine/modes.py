@@ -25,6 +25,21 @@ from .story import StoryEngine
 from ..utils.formatting import format_achievement_block
 
 
+AUTO_CHECK_TAGS = {
+    "chaos": ("cha", 12),
+    "risk": ("dex", 12),
+    "puzzle": ("int", 13),
+    "stealth": ("dex", 13),
+    "social": ("cha", 12),
+    "ally": ("cha", 11),
+    "exploration": ("wis", 11),
+    "combat": ("str", 14),
+    "magic": ("int", 14),
+    "inventory": ("wis", 10),
+    "shortcut": ("dex", 12),
+}
+
+
 @dataclass(frozen=True)
 class ModeRequest:
     user_id: str
@@ -72,6 +87,7 @@ class ModeRouter:
         attachments = list(request.attachments)
         metadata = dict(request.metadata)
         agent_message = request.message
+        story_context: Optional[str] = None
 
         self.store.ensure_user(request.user_id, request.display_name)
         overrides = request.metadata.get("session_overrides", {})
@@ -96,6 +112,10 @@ class ModeRouter:
                 profile,
                 request.message,
             )
+            profile = self.store.get_story_profile(request.session_id) or profile
+            story_context = self._story_context_text(profile, story_turn)
+            if story_context:
+                attachments.append(story_context)
             attachments.extend(story_turn.attachments)
             agent_message = story_turn.agent_message
             combined_triggers = list(triggers)
@@ -140,8 +160,9 @@ class ModeRouter:
             mode=session_state.mode,
             achievement=achievement,
             toggle_snapshot=toggle_snapshot,
-            message=agent_message,
+            agent_payload=agent_message,
             attachments=tuple(attachments),
+            fallback_context=story_context,
         )
         full_text = f"{block}\n\n{body}"
         return ModeResponse(
@@ -159,12 +180,13 @@ class ModeRouter:
         mode: AllowedMode,
         achievement: Achievement,
         toggle_snapshot: dict[str, Any],
-        message: str,
+        agent_payload: str,
         attachments: Sequence[str],
+        fallback_context: Optional[str],
     ) -> str:
         try:
             return self.agent.generate_reply(
-                user_message=message,
+                user_message=agent_payload,
                 mode=mode,
                 achievement=achievement,
                 toggle_snapshot=toggle_snapshot,
@@ -172,13 +194,20 @@ class ModeRouter:
                 attachments=attachments,
             )
         except AgentNotConfiguredError:
-            return self._offline_body(request, achievement, toggle_snapshot, message)
+            return self._offline_body(
+                request,
+                achievement,
+                toggle_snapshot,
+                message=request.message,
+                context=fallback_context,
+            )
         except AgentError:
             return self._offline_body(
                 request,
                 achievement,
                 toggle_snapshot,
-                message=message,
+                message=request.message,
+                context=fallback_context,
                 error_mode=True,
             )
 
@@ -188,6 +217,7 @@ class ModeRouter:
         achievement: Achievement,
         toggle_snapshot: dict[str, Any],
         message: str,
+        context: Optional[str] = None,
         *,
         error_mode: bool = False,
     ) -> str:
@@ -198,20 +228,24 @@ class ModeRouter:
         )
         if error_mode:
             paragraph_one = (
-                "Keith clears his throat, blames a gremlin for temporarily severing the "
-                "oracular uplink, and vows to improvise anyway."
+                "Keith whacks the oracle crystal—silence. The uplink is down, so you're getting handcrafted narration instead."
             )
         else:
             paragraph_one = (
-                "Keith flexes his narrator cape and assures you the immersion field is "
-                "still operational even without the grand oracle."
+                "Keith flexes his narrator cape and assures you the immersion field is still operational even without the grand oracle."
             )
-        paragraph_two = (
-            f"\"{sanitized}\" echoes off the dungeon walls while the control levers "
-            f"flash ({toggle_line}). Keith scribbles a vow to revisit this moment "
-            "once the mimicry crystal—also known as the API—behaves."
+        if context:
+            paragraph_two = (
+                "He recaps the moment manually so future historians don't miss a beat:\n"
+                f"{context}"
+            )
+        else:
+            paragraph_two = "He at least jots down your words for later: " + (sanitized or "[no input]")
+        paragraph_three = (
+            "Consider trying the command again after a short rest. "
+            f"(toggles: {toggle_line})"
         )
-        return f"{paragraph_one}\n\n{paragraph_two}"
+        return f"{paragraph_one}\n\n{paragraph_two}\n\n{paragraph_three}"
 
     def _fallback_achievement(self, user_id: str) -> Achievement:
         """Return the most recent achievement for continuity, or a default."""
@@ -222,6 +256,36 @@ class ModeRouter:
                 return achievement
         # Fallback to the first registry entry for deterministic behavior.
         return self._registry[0]
+
+    def _story_context_text(self, profile, story_turn) -> Optional[str]:
+        if not story_turn or not profile:
+            return None
+        order = ["str", "dex", "con", "int", "wis", "cha"]
+        ability_summary = ", ".join(
+            f"{ability.upper()} {profile.ability_scores.get(ability, 10)}"
+            for ability in order
+        )
+        lines = [
+            f"Character: {profile.character_name or 'Unnamed'} (Level {profile.level}, XP {profile.experience})",
+            f"Race/Class: {profile.race or 'Unknown'} / {profile.character_class or 'Untrained'}",
+            f"Abilities: {ability_summary}",
+            f"Current scene: {story_turn.scene.id} — {story_turn.scene.title}",
+        ]
+        if story_turn.selected_choice:
+            choice = story_turn.selected_choice
+            lines.append(f"Selected choice: {choice.id} ({choice.label})")
+        if story_turn.check_outcome:
+            outcome = story_turn.check_outcome
+            status = "success" if outcome.success else "failure"
+            manual = " (manual)" if outcome.manual else ""
+            lines.append(
+                f"Check: {outcome.ability.upper()}{manual} {status} — rolls {list(outcome.kept)} total {outcome.total} vs DC {outcome.difficulty_class}"
+            )
+        if story_turn.scene.choices:
+            lines.append("Choices:")
+            for idx, option in enumerate(story_turn.scene.choices, start=1):
+                lines.append(f"  {idx}. {option.label} (id={option.id})")
+        return "\n".join(lines)
 
     def _story_setup_response(self, request: ModeRequest, mode: AllowedMode) -> ModeResponse:
         achievement = self._registry_index.get("session-zero-hero", self._registry[0])

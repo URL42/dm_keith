@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -121,6 +122,19 @@ class CharacterManager:
         profile = self.ensure_profile(session_id, user_id)
         ability_scores = dict(profile.ability_scores)
         ability_scores[ability_key] = value
+        return self.store.upsert_story_profile(
+            session_id,
+            user_id,
+            ability_scores=ability_scores,
+        )
+
+    def assign_random_ability_scores(
+        self, session_id: str, user_id: str, *, low: int = 4, high: int = 20
+    ) -> StoryProfile:
+        if low > high:
+            low, high = high, low
+        rng = random.Random()
+        ability_scores = {ability: rng.randint(low, high) for ability in ABILITY_KEYS}
         return self.store.upsert_story_profile(
             session_id,
             user_id,
