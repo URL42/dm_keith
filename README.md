@@ -1,6 +1,6 @@
 # Dungeon Master Keith (DMK)
 
-![Dungeon Master Keith Avatar](assets/profile/dmk.png)
+![DM Keith](assets/profile/dmk.png)
 
 Dungeon Master Keith is a sarcastic omniscient narrator persona built with the OpenAI Agents SDK. Every major reply starts with an achievement block, followed by theatrical narration or comedic analysis. The runtime supports multiple modes (narrator, achievements-only, explain, story) and exposes a Telegram bot bridge for live play sessions.
 
