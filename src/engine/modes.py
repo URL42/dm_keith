@@ -19,9 +19,9 @@ from ..engine.achievements import (
     award_achievement,
     load_registry,
 )
-from ..engine.storage import SQLiteStore
+from ..engine.storage import SQLiteStore, SessionState
 from .character import profile_ready
-from .story import StoryEngine
+from .story import StoryEngine, StoryTurnResult
 from ..utils.formatting import format_achievement_block
 
 
@@ -56,7 +56,7 @@ class ModeRequest:
 @dataclass(frozen=True)
 class ModeResponse:
     text: str
-    achievement_id: str
+    achievement_id: Optional[str]
     mode: AllowedMode
     was_new: bool
     trigger: str
@@ -88,6 +88,7 @@ class ModeRouter:
         metadata = dict(request.metadata)
         agent_message = request.message
         story_context: Optional[str] = None
+        story_turn = None
 
         self.store.ensure_user(request.user_id, request.display_name)
         overrides = request.metadata.get("session_overrides", {})
@@ -125,29 +126,34 @@ class ModeRouter:
             triggers = tuple(combined_triggers)
             metadata.setdefault("story", {}).update(story_turn.metadata)
 
-        achievement_event = AchievementEvent.from_trigger(
-            user_id=request.user_id,
-            session_id=request.session_id,
-            trigger=triggers[0],
-            extra_triggers=triggers[1:],
-            payload={
-                "metadata": metadata,
-                "text": request.message,
-                "agent_message": agent_message,
-            },
-        )
-        award = award_achievement(achievement_event, AwardContext(store=self.store))
+        should_award = self._should_award(session_state, request, story_turn)
 
-        was_new = True
+        achievement: Optional[Achievement]
         trigger_used = triggers[0]
-        if award:
-            achievement = award.achievement
-            trigger_used = award.trigger
+        was_new = False
+        if should_award:
+            achievement_event = AchievementEvent.from_trigger(
+                user_id=request.user_id,
+                session_id=request.session_id,
+                trigger=triggers[0],
+                extra_triggers=triggers[1:],
+                payload={
+                    "metadata": metadata,
+                    "text": request.message,
+                    "agent_message": agent_message,
+                },
+            )
+            award = award_achievement(achievement_event, AwardContext(store=self.store))
+            if award:
+                achievement = award.achievement
+                trigger_used = award.trigger
+                was_new = True
+            else:
+                achievement = None
         else:
-            was_new = False
-            achievement = self._fallback_achievement(request.user_id)
+            achievement = None
 
-        block = format_achievement_block(achievement)
+        block = format_achievement_block(achievement) if achievement else ""
         toggle_snapshot = {
             "profanity_level": session_state.profanity_level,
             "rating": session_state.rating,
@@ -164,10 +170,10 @@ class ModeRouter:
             attachments=tuple(attachments),
             fallback_context=story_context,
         )
-        full_text = f"{block}\n\n{body}"
+        full_text = f"{block}\n\n{body}" if block else body
         return ModeResponse(
             text=full_text.strip(),
-            achievement_id=achievement.id,
+            achievement_id=achievement.id if achievement else None,
             mode=session_state.mode,  # reflects persisted state
             was_new=was_new,
             trigger=trigger_used,
@@ -279,14 +285,54 @@ class ModeRouter:
             status = "success" if outcome.success else "failure"
             manual = " (manual)" if outcome.manual else ""
             auto = " (auto)" if story_turn.auto_generated_check and not outcome.manual else ""
-            lines.append(
+            note = story_turn.metadata.get("check", {}).get("note") if getattr(story_turn, "metadata", None) else None
+            base_line = (
                 f"Check: {outcome.ability.upper()}{manual}{auto} {status} — rolls {list(outcome.kept)} total {outcome.total} vs DC {outcome.difficulty_class}"
             )
+            if note:
+                base_line += f" ({note})"
+            lines.append(base_line)
         if story_turn.scene.choices:
             lines.append("Choices:")
             for idx, option in enumerate(story_turn.scene.choices, start=1):
                 lines.append(f"  {idx}. {option.label} (id={option.id})")
         return "\n".join(lines)
+
+    def _should_award(
+        self,
+        session_state: SessionState,
+        request: ModeRequest,
+        story_turn: Optional[StoryTurnResult],
+    ) -> bool:
+        message_text = request.message.strip()
+        interesting = bool(message_text)
+
+        if session_state.mode == "story":
+            interesting = bool(
+                story_turn
+                and (
+                    story_turn.selected_choice is not None
+                    or story_turn.check_outcome is not None
+                    or (story_turn.metadata.get("xp_awarded") or 0) > 0
+                )
+            )
+
+        if not interesting:
+            return False
+
+        density = session_state.achievement_density or "normal"
+        probabilities = {"low": 0.25, "normal": 0.55, "high": 0.85}
+        probability = probabilities.get(density, 0.55)
+        seed = hash(
+            (
+                request.user_id,
+                request.session_id,
+                session_state.mode,
+                message_text,
+            )
+        ) & 0xFFFF
+        roll = seed / 0xFFFF
+        return roll < probability
 
     def _story_setup_response(self, request: ModeRequest, mode: AllowedMode) -> ModeResponse:
         achievement = self._registry_index.get("session-zero-hero", self._registry[0])

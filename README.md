@@ -74,7 +74,7 @@ Dungeon Master Keith is a sarcastic omniscient narrator persona built with the O
 - `/history [n]` — list recent dice rolls (defaults to 5).
 - Story choices tagged with things like `chaos`, `risk`, `puzzle`, etc. trigger auto ability checks; Keith announces the roll result (and whether it was auto-rolled or came from your stored `/roll`).
 
-All major responses start with an achievement block (`Title`, `Description`, `Reward`, `Rarity`) followed by 1–2 paragraphs of text. The runtime enforces cooldowns and dedupes via SQLite so users earn each achievement deliberately.
+Keith now awards achievements only when something interesting happens—big choices, mode shifts, clutch rolls. When a block appears, expect the usual `Title`, `Description`, `Reward`, `Rarity` format followed by 1–2 theatrical paragraphs. The runtime enforces cooldowns and dedupes via SQLite so users earn trophies deliberately.
 
 ## Development Commands
 

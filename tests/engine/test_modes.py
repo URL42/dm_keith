@@ -59,7 +59,6 @@ def test_mode_router_happy_path(tmp_path) -> None:
         triggers=("event.message",),
     )
     response = router.handle(request)
-    assert response.text.startswith("🏆 ACHIEVEMENT UNLOCKED")
     assert "Paragraph one." in response.text
     assert response.mode in {"narrator", "achievements", "explain", "story"}
 
