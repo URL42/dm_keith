@@ -101,6 +101,20 @@ Run everything with:
 uv run pytest
 ```
 
+## Docker / Compose
+
+Build and run the bot with Docker (tap-to-play audio clips still work):
+1) Copy `.env.example` to `.env` and fill in keys. Ensure `DMK_DB_PATH` points inside `/app/local/dev.sqlite3` (the default).
+2) Build and start:
+   ```bash
+   docker compose up --build
+   ```
+   The SQLite DB is persisted in the named volume `dmk_data`.
+3) To rebuild after code changes:
+   ```bash
+   docker compose up --build --force-recreate
+   ```
+
 ## Deployment Notes
 
 - Long polling is used for Telegram during early development. When deploying behind Cloudflare or another edge, swap in webhook mode (see bot module for TODO hook).

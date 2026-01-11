@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - dmk_data:/app/local
+    restart: unless-stopped
+
+volumes:
+  dmk_data: {}
