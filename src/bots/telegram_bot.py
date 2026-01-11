@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from pathlib import Path
 from typing import Sequence
 
 from telegram import Update
@@ -23,6 +24,12 @@ from ..engine.modes import ModeRequest, ModeRouter
 from ..engine.storage import SessionState, SQLiteStore
 
 
+SOUND_MAP = {
+    "new_achievement": Path("assets/sounds/new_achievement.mp3"),
+    "new_quest": Path("assets/sounds/new_quest.mp3"),
+}
+
+
 class TelegramBot:
     """High-level coordinator for Telegram interactions."""
 
@@ -35,6 +42,7 @@ class TelegramBot:
         self.store.migrate()
         self.character_manager = CharacterManager(self.store)
         self.router = ModeRouter(store=self.store)
+        self._sound_cache: dict[str, str] = {}
 
     def build_application(self) -> Application:
         application = (
@@ -597,6 +605,7 @@ class TelegramBot:
         )
         response = self.router.handle(request)
         await effective_message.reply_text(response.text)
+        await self._maybe_send_sound(effective_message, response, normalized_triggers)
 
     def _ensure_session(self, session_id: str, user_id: str) -> SessionState:
         state = self.store.get_session(session_id)
@@ -637,6 +646,36 @@ class TelegramBot:
         if short:
             return "\n".join(lines[:5])
         return "\n".join(lines)
+
+    async def _maybe_send_sound(
+        self,
+        message,
+        response,
+        triggers: Sequence[str],
+    ) -> None:
+        """Send a short audio cue for key events."""
+        sound_key = None
+        if response.was_new and response.achievement_id:
+            sound_key = "new_achievement"
+        elif "event.story.choice" in triggers:
+            sound_key = "new_quest"
+
+        if sound_key is None:
+            return
+        path = SOUND_MAP.get(sound_key)
+        if not path or not path.exists():
+            return
+
+        cached_id = self._sound_cache.get(sound_key)
+        if cached_id:
+            await message.reply_audio(audio=cached_id)
+            return
+
+        with path.open("rb") as handle:
+            sent = await message.reply_audio(audio=handle)
+        audio = getattr(sent, "audio", None)
+        if audio and getattr(audio, "file_id", None):
+            self._sound_cache[sound_key] = audio.file_id
 
     def _format_story_scene(self, scene, state) -> str:
         narration = "\n".join(scene.narration)
