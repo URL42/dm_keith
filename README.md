@@ -114,14 +114,16 @@ to one line per message so nobody can type a fake `DM:` line into the transcript
 docker compose up --build -d
 ```
 
-The campaign database lives on the host, bind-mounted into the container at the
-same path it has outside, so `DMK_DB_PATH` means the same thing in both places.
-Two variables have to agree:
+Set **one** storage variable — the host directory where the database is kept:
 
 ```bash
-DMK_DB_DIR=/mnt/sata/dmk/db                 # the directory, bind-mounted
-DMK_DB_PATH=/mnt/sata/dmk/db/main.sqlite3   # the file inside it
+DMK_DB_DIR=/mnt/sata/dmk/db     # -> database at /mnt/sata/dmk/db/main.sqlite3
 ```
+
+Compose mounts that directory at `/data` inside the container, and the image
+already points `DMK_DB_PATH` there. Leave `DMK_DB_PATH` unset under Docker: any
+other value writes inside the container, where the data vanishes on the next
+rebuild, so the bot refuses to start rather than losing your campaign quietly.
 
 The container runs as a non-root user, so it must run as whoever owns
 `DMK_DB_DIR` on the host — set `DMK_UID` and `DMK_GID` from `id -u` / `id -g`. If
@@ -137,7 +139,9 @@ your old `.env`:
 - `OPENAI_API_KEY` alone is no longer enough; set the key matching your provider.
 - `DMK_DEFAULT_MODE`, `DMK_PROFANITY_LEVEL`, `DMK_RATING`, `DMK_TANGENTS_LEVEL` and
   `DMK_ACHIEVEMENT_DENSITY` are gone.
-- `DMK_DB_DIR`, `DMK_UID` and `DMK_GID` are new.
+- `DMK_DB_DIR`, `DMK_UID` and `DMK_GID` are new, and `DMK_DB_PATH` should be
+  **removed** from a Docker `.env` — it now describes a path inside the container,
+  not on the host.
 
 The database schema is entirely new and there is no migration — the old tables are
 left alone and ignored, and the bot starts a fresh story. Point `DMK_DB_PATH` at a

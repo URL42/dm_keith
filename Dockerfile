@@ -16,10 +16,13 @@ RUN uv sync --frozen --no-dev
 FROM python:3.11-slim
 
 WORKDIR /app
+# /data is where compose mounts the host directory holding the campaign database.
+# It's a fixed path on purpose: the container never needs to know where that
+# directory lives on the host.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    DMK_DB_PATH=/app/local/dmk.sqlite3
+    DMK_DB_PATH=/data/main.sqlite3
 
 COPY --from=builder /app/.venv /app/.venv
 COPY src ./src
@@ -27,10 +30,10 @@ COPY prompts ./prompts
 COPY assets ./assets
 
 # The bot holds the Telegram token and the campaign database; it has no business
-# running as root. /app/local is the compose volume mount point.
+# running as root.
 RUN useradd --create-home --uid 1000 keith \
-    && mkdir -p /app/local \
-    && chown -R keith:keith /app
+    && mkdir -p /data \
+    && chown -R keith:keith /app /data
 USER keith
 
 CMD ["python", "-m", "src.main"]

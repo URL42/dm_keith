@@ -4,17 +4,14 @@ services:
     env_file: .env
 
     volumes:
-      # The campaign database lives on the host, so it survives image rebuilds.
-      # Mounted at the same path inside the container as outside, so DMK_DB_PATH
-      # means the same thing in both places.
-      #
-      # DMK_DB_DIR must be the *directory* part of DMK_DB_PATH. On bossbitch:
-      #   DMK_DB_DIR=/mnt/sata/dmk/db
-      #   DMK_DB_PATH=/mnt/sata/dmk/db/main.sqlite3
-      - ${DMK_DB_DIR:?set DMK_DB_DIR in .env — the absolute directory holding the campaign database}:${DMK_DB_DIR}
+      # DMK_DB_DIR is the directory on *this host* that holds the campaign
+      # database. It's always mounted at /data inside the container, so it can be
+      # an absolute path (/mnt/sata/dmk/db) or a relative one (./local) and the
+      # container doesn't care either way.
+      - ${DMK_DB_DIR:-./local}:/data
 
-    # Run as the host user that owns DMK_DB_DIR, otherwise SQLite can't write
-    # to the bind mount. Find yours with `id -u` and `id -g`.
+    # Run as the host user that owns DMK_DB_DIR, otherwise SQLite can't write to
+    # the mount. Find yours with `id -u` and `id -g`.
     user: "${DMK_UID:-1000}:${DMK_GID:-1000}"
 
     restart: unless-stopped

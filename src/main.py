@@ -10,6 +10,7 @@ from src.bot.app import build_application
 from src.config import get_settings
 from src.llm.models import ModelConfigError
 from src.log import get_logger, setup_logging
+from src.storage.db import DatabaseNotPersistent, DatabaseUnwritable
 
 
 def main() -> int:
@@ -32,7 +33,8 @@ def main() -> int:
     try:
         app = build_application(settings)
         app.run_polling()
-    except ModelConfigError as exc:
+    except (ModelConfigError, DatabaseNotPersistent, DatabaseUnwritable) as exc:
+        # Misconfiguration, not a crash -- report it as such, without a traceback.
         log.error("%s", exc)
         return 1
     return 0

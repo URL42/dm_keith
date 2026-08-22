@@ -14,6 +14,7 @@ import pytest
 
 from src.config import Settings, get_settings
 from src.main import main
+from src.storage import db
 from src.storage.db import DatabaseUnwritable, connect
 
 
@@ -85,3 +86,37 @@ async def test_a_writable_directory_is_created_on_demand(tmp_path: Path) -> None
         assert (nested / "main.sqlite3").exists()
     finally:
         await conn.close()
+
+
+async def test_a_container_refuses_to_write_outside_the_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leftover absolute DMK_DB_PATH would write inside the container.
+
+    That looks like it works and then loses the whole campaign on the next
+    `docker compose up --build`, so it has to be a startup failure instead.
+    """
+    monkeypatch.setattr(db, "in_container", lambda: True)
+
+    with pytest.raises(db.DatabaseNotPersistent) as excinfo:
+        await connect(tmp_path / "main.sqlite3")
+
+    message = str(excinfo.value)
+    assert "lost on the next rebuild" in message
+    assert "DMK_DB_DIR" in message
+
+
+async def test_a_container_accepts_the_mounted_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(db, "in_container", lambda: True)
+    monkeypatch.setattr(db, "CONTAINER_DATA_DIR", Path("/tmp"))
+
+    conn = await connect(Path("/tmp/dmk-persistence-check/main.sqlite3"))
+    await conn.close()
+
+
+async def test_outside_a_container_any_path_is_fine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(db, "in_container", lambda: False)
+    conn = await connect(tmp_path / "anywhere.sqlite3")
+    await conn.close()
