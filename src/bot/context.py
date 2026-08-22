@@ -41,6 +41,12 @@ def get_service(context: ContextTypes.DEFAULT_TYPE) -> GameService:
     return service
 
 
+def chat_state(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
+    """Per-chat scratch space. Empty dict when there's no chat context."""
+    state = context.chat_data
+    return state if state is not None else {}
+
+
 def user_state(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
     """Per-user scratch space for the creation conversation.
 

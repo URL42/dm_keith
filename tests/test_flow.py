@@ -58,6 +58,7 @@ def context(repo: Repo) -> MagicMock:
         SERVICE_KEY: GameService(repo, "test:function", model=narrating_model()),
     }
     ctx.user_data = {}
+    ctx.chat_data = {}
     ctx.bot.send_chat_action = AsyncMock()
     return ctx
 
@@ -332,3 +333,29 @@ async def test_a_model_failure_is_reported_not_narrated(repo: Repo, context: Mag
     said = turn.message.reply_text.await_args.args[0]
     assert "RuntimeError" in said
     assert "Nothing happened" in said
+
+
+async def test_typing_instead_of_tapping_a_genre_gets_an_answer(
+    repo: Repo, context: MagicMock
+) -> None:
+    """Used to vanish silently: /newgame doesn't create the campaign, so a typed
+    reply hit the 'no campaign here, stay quiet' path."""
+    await handle_newgame(message_update(), context)
+
+    typed = message_update("cyberpunk")
+    await handle_play(typed, context)
+
+    typed.message.reply_text.assert_awaited_once()
+    assert "Pick a genre" in typed.message.reply_text.await_args.args[0]
+
+
+async def test_the_genre_menu_lists_full_descriptions(repo: Repo, context: MagicMock) -> None:
+    """Button text gets cut off by Telegram, so the pitch goes in the message."""
+    from src.bot.commands import genre_keyboard, genre_menu_text
+
+    text = genre_menu_text()
+    assert "structurally unsound dungeons" in text
+
+    button = genre_keyboard().inline_keyboard[0][0]
+    assert button.text == "🗡 Fantasy"
+    assert len(button.text) < 24  # short enough not to be truncated

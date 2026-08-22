@@ -6,7 +6,8 @@ from telegram import Update
 from telegram.constants import MessageEntityType
 from telegram.ext import ContextTypes
 
-from src.bot.context import get_repo, get_service, reply
+from src.bot.commands import CHOOSING_GENRE_KEY
+from src.bot.context import chat_state, get_repo, get_service, reply
 from src.log import get_logger
 
 log = get_logger(__name__)
@@ -57,6 +58,10 @@ async def handle_play(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     repo = get_repo(context)
     campaign = await repo.get_live_campaign(chat.id)
     if campaign is None:
+        # Mid-/newgame the campaign doesn't exist yet, so a typed reply would
+        # otherwise vanish into the same silence as chatter in a chat with no game.
+        if chat_state(context).get(CHOOSING_GENRE_KEY):
+            await message.reply_text("Pick a genre with the buttons above first.")
         return  # No campaign here; stay quiet rather than nagging.
 
     character = await repo.get_character(campaign.id, user.id)

@@ -51,13 +51,19 @@ class Origin:
 class Genre:
     key: str
     label: str
-    #: Shown on the /newgame keyboard.
+    #: Telegram truncates inline button text to whatever fits on one line, so the
+    #: button gets the emoji and label only; the pitch goes in the message body.
+    emoji: str
     pitch: str
     #: Canonical ability key -> what this genre calls it.
     ability_names: dict[str, str]
     archetypes: tuple[Archetype, ...]
     origins: tuple[Origin, ...]
     tone_note: str = ""
+
+    @property
+    def button(self) -> str:
+        return f"{self.emoji} {self.label}"
 
     def ability_label(self, key: str) -> str:
         return self.ability_names.get(key, key.upper())
@@ -69,7 +75,8 @@ class Genre:
 FANTASY = Genre(
     key="fantasy",
     label="Fantasy",
-    pitch="🗡 Swords, spellbooks and structurally unsound dungeons.",
+    emoji="🗡",
+    pitch="Swords, spellbooks and structurally unsound dungeons.",
     ability_names={
         "str": "Strength",
         "dex": "Dexterity",

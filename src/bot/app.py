@@ -7,7 +7,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import aiosqlite
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -49,6 +49,17 @@ START_TEXT = (
     "Start with /newgame, then everyone playing sends /join.\n"
     "See /help for the rest."
 )
+
+#: The menu Telegram shows when someone types "/". Order is the order shown.
+BOT_COMMANDS = [
+    BotCommand("newgame", "Start a campaign — pick a genre"),
+    BotCommand("join", "Make your character"),
+    BotCommand("begin", "Start the story once the party's ready"),
+    BotCommand("sheet", "Your character sheet"),
+    BotCommand("party", "Everyone's character sheets"),
+    BotCommand("endgame", "Retire the current campaign"),
+    BotCommand("help", "What all of this does"),
+]
 
 HELP_TEXT = (
     "*Running a game*\n"
@@ -128,6 +139,9 @@ def _startup(settings: Settings) -> Callable[[Application], Coroutine[Any, Any, 
             settings.effort,
             settings.summary_model,
         )
+        # Populates the menu Telegram shows when someone types "/".
+        await app.bot.set_my_commands(BOT_COMMANDS)
+
         # Say so explicitly: an idle bot produces no further output, which otherwise
         # looks indistinguishable from a hang.
         log.info("listening for messages — send /newgame in Telegram to start")

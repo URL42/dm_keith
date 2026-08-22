@@ -74,8 +74,14 @@ async def test_post_init_attaches_a_repo_and_shutdown_closes_it(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     app = MagicMock()
     app.bot_data = {}
+    app.bot.set_my_commands = AsyncMock()
 
     await _startup(settings)(app)
+
+    # The "/" menu is populated so players can see their options.
+    app.bot.set_my_commands.assert_awaited_once()
+    registered = {c.command for c in app.bot.set_my_commands.await_args.args[0]}
+    assert {"newgame", "join", "begin", "sheet", "party", "endgame", "help"} == registered
     assert isinstance(app.bot_data[REPO_KEY], Repo)
     assert isinstance(app.bot_data[SERVICE_KEY], GameService)
     assert settings.db_path.exists()

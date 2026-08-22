@@ -6,7 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from src.bot.context import get_repo, get_service, reply, send_preformatted
+from src.bot.context import chat_state, get_repo, get_service, reply, send_preformatted
 from src.game.genres import GENRES, get_genre
 from src.game.memory import render_character
 from src.log import get_logger
@@ -18,13 +18,29 @@ CONFIRM_NEW = "newgame:confirm"
 CANCEL_NEW = "newgame:cancel"
 
 
+#: Set while a genre keyboard is outstanding, so a typed reply gets an answer
+#: instead of the silence a chat with no campaign normally gets.
+CHOOSING_GENRE_KEY = "choosing_genre"
+
+
 def genre_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(g.pitch, callback_data=f"{GENRE_PREFIX}{g.key}")]
+            [InlineKeyboardButton(g.button, callback_data=f"{GENRE_PREFIX}{g.key}")]
             for g in GENRES.values()
         ]
     )
+
+
+def genre_menu_text() -> str:
+    """The prompt plus a full description of each genre.
+
+    The descriptions live here rather than on the buttons because Telegram cuts
+    button text off at one line.
+    """
+    lines = ["*What kind of trouble are we getting into?*", ""]
+    lines += [f"{g.emoji} *{g.label}* — {g.pitch}" for g in GENRES.values()]
+    return "\n".join(lines)
 
 
 async def handle_newgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -48,8 +64,9 @@ async def handle_newgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
+    chat_state(context)[CHOOSING_GENRE_KEY] = True
     await update.message.reply_text(
-        "What kind of trouble are we getting into?", reply_markup=genre_keyboard()
+        genre_menu_text(), parse_mode=ParseMode.MARKDOWN, reply_markup=genre_keyboard()
     )
 
 
@@ -72,8 +89,10 @@ async def handle_newgame_confirm(update: Update, context: ContextTypes.DEFAULT_T
     if existing is not None:
         await repo.clear_pending_rolls(existing.id)
     await repo.end_campaign(chat.id)
+    chat_state(context)[CHOOSING_GENRE_KEY] = True
     await query.edit_message_text(
-        "Retired. What kind of trouble are we getting into instead?",
+        f"Retired.\n\n{genre_menu_text()}",
+        parse_mode=ParseMode.MARKDOWN,
         reply_markup=genre_keyboard(),
     )
 
@@ -98,6 +117,7 @@ async def handle_genre_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
+    chat_state(context).pop(CHOOSING_GENRE_KEY, None)
     genre_key = (query.data or "").removeprefix(GENRE_PREFIX)
     genre = get_genre(genre_key)
     campaign = await repo.create_campaign(chat.id, genre=genre.key)
