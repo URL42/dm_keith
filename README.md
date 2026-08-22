@@ -114,8 +114,37 @@ to one line per message so nobody can type a fake `DM:` line into the transcript
 docker compose up --build -d
 ```
 
-The `dmk_data` named volume holds the campaign database — keep it and your stories
-survive image rebuilds.
+The campaign database lives on the host, bind-mounted into the container at the
+same path it has outside, so `DMK_DB_PATH` means the same thing in both places.
+Two variables have to agree:
+
+```bash
+DMK_DB_DIR=/mnt/sata/dmk/db                 # the directory, bind-mounted
+DMK_DB_PATH=/mnt/sata/dmk/db/main.sqlite3   # the file inside it
+```
+
+The container runs as a non-root user, so it must run as whoever owns
+`DMK_DB_DIR` on the host — set `DMK_UID` and `DMK_GID` from `id -u` / `id -g`. If
+they don't match, the bot says exactly that at startup instead of failing with
+SQLite's unhelpful "unable to open database file".
+
+### Upgrading from the pre-revamp bot
+
+The environment variables changed. Start from `.env.example` rather than editing
+your old `.env`:
+
+- `DMK_MODEL` now needs a provider prefix — a bare `gpt-4o` is rejected at startup.
+- `OPENAI_API_KEY` alone is no longer enough; set the key matching your provider.
+- `DMK_DEFAULT_MODE`, `DMK_PROFANITY_LEVEL`, `DMK_RATING`, `DMK_TANGENTS_LEVEL` and
+  `DMK_ACHIEVEMENT_DENSITY` are gone.
+- `DMK_DB_DIR`, `DMK_UID` and `DMK_GID` are new.
+
+The database schema is entirely new and there is no migration — the old tables are
+left alone and ignored, and the bot starts a fresh story. Point `DMK_DB_PATH` at a
+new filename if you'd rather keep the two completely separate.
+
+Also, for group play: turn **off** privacy mode for the bot in @BotFather, or
+Telegram won't deliver ordinary messages to it and Keith will only see commands.
 
 ## Roadmap
 
