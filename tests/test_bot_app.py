@@ -14,17 +14,17 @@ import pytest
 from telegram import Update
 
 from src.bot.app import (
-    CONN_KEY,
-    REPO_KEY,
     _close_database,
-    _open_database,
+    _startup,
     build_application,
     handle_error,
     handle_help,
     handle_ping,
     handle_start,
 )
+from src.bot.context import CONN_KEY, REPO_KEY, SERVICE_KEY
 from src.config import Settings
+from src.game.session import GameService
 from src.storage.repo import Repo
 
 
@@ -49,16 +49,35 @@ def test_all_commands_are_registered(settings: Settings) -> None:
         for handler in group
         for cmd in getattr(handler, "commands", set()) or set()
     }
-    assert {"start", "help", "ping"} <= registered
+    assert {"start", "help", "ping", "newgame", "begin", "sheet", "party", "endgame"} <= registered
     assert app.error_handlers, "an error handler must be attached"
 
 
-async def test_post_init_attaches_a_repo_and_shutdown_closes_it(settings: Settings) -> None:
+def test_join_is_handled_by_the_creation_conversation(settings: Settings) -> None:
+    """/join must reach the ConversationHandler, not a bare command handler."""
+    from telegram.ext import ConversationHandler
+
+    app = build_application(settings)
+    conversations = [
+        h for group in app.handlers.values() for h in group if isinstance(h, ConversationHandler)
+    ]
+    assert conversations, "character creation conversation is not registered"
+    entry_commands = {
+        cmd for h in conversations for e in h.entry_points for cmd in getattr(e, "commands", set())
+    }
+    assert "join" in entry_commands
+
+
+async def test_post_init_attaches_a_repo_and_shutdown_closes_it(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     app = MagicMock()
     app.bot_data = {}
 
-    await _open_database(settings)(app)
+    await _startup(settings)(app)
     assert isinstance(app.bot_data[REPO_KEY], Repo)
+    assert isinstance(app.bot_data[SERVICE_KEY], GameService)
     assert settings.db_path.exists()
 
     # The repo is usable, not just present.
@@ -70,6 +89,21 @@ async def test_post_init_attaches_a_repo_and_shutdown_closes_it(settings: Settin
         await app.bot_data[CONN_KEY].execute("SELECT 1")
 
 
+async def test_a_bad_model_fails_at_startup_not_mid_campaign(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Better a loud crash on boot than Keith dying halfway through a session."""
+    from src.llm.models import PROVIDER_CREDENTIALS, ModelConfigError
+
+    for env in PROVIDER_CREDENTIALS.values():
+        monkeypatch.delenv(env, raising=False)
+
+    app = MagicMock()
+    app.bot_data = {}
+    with pytest.raises(ModelConfigError):
+        await _startup(settings)(app)
+
+
 async def test_shutdown_without_a_connection_is_harmless() -> None:
     app = MagicMock()
     app.bot_data = {}
@@ -78,7 +112,11 @@ async def test_shutdown_without_a_connection_is_harmless() -> None:
 
 @pytest.mark.parametrize(
     ("handler", "expected"),
-    [(handle_start, "Dungeon Master Keith"), (handle_help, "/help"), (handle_ping, "Still here")],
+    [
+        (handle_start, "Dungeon Master Keith"),
+        (handle_help, "/newgame"),
+        (handle_ping, "Still here"),
+    ],
 )
 async def test_simple_handlers_reply(handler: Any, expected: str) -> None:
     update, reply = _fake_update()

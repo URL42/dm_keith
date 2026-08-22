@@ -15,6 +15,7 @@ import aiosqlite
 
 from src.game.characters import (
     ability_modifier,
+    clamp_ability,
     level_from_xp,
     max_hp_for,
     normalise_abilities,
@@ -66,14 +67,18 @@ class Character:
     items: tuple[Item, ...] = ()
 
     def effective_abilities(self) -> dict[str, int]:
-        """Base scores plus the mods from everything currently equipped."""
+        """Base scores plus the mods from everything currently equipped.
+
+        Clamped to the normal 1-20 range: gear should tilt the odds, not break the
+        maths, however enthusiastic the DM got when it invented the item.
+        """
         scores = dict(self.abilities)
         for item in self.items:
             if not item.equipped:
                 continue
             for key, mod in item.stat_mods.items():
                 if key in scores:
-                    scores[key] = scores[key] + mod
+                    scores[key] = clamp_ability(scores[key] + mod)
         return scores
 
     def modifier(self, ability: str) -> int:
@@ -174,6 +179,20 @@ class Repo:
             (chat_id,),
         )
         await self.conn.commit()
+
+    async def try_activate(self, campaign_id: int) -> bool:
+        """Move a campaign from 'creating' to 'active'. True only for the winner.
+
+        The status test is inside the UPDATE, so two simultaneous /begin commands
+        can't both open the story.
+        """
+        cur = await self.conn.execute(
+            "UPDATE campaigns SET status = 'active', updated_at = datetime('now') "
+            "WHERE id = ? AND status = 'creating'",
+            (campaign_id,),
+        )
+        await self.conn.commit()
+        return cur.rowcount > 0
 
     async def update_campaign(self, campaign_id: int, **fields: Any) -> None:
         allowed = {"genre", "genre_skin", "tone", "status", "summary", "summary_through_id"}
