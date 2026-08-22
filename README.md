@@ -117,7 +117,7 @@ docker compose up --build -d
 Set **one** storage variable — the host directory where the database is kept:
 
 ```bash
-DMK_DB_DIR=/mnt/sata/dmk/db     # -> database at /mnt/sata/dmk/db/main.sqlite3
+DMK_DB_DIR=/mnt/sata/dmk/db     # -> database at /mnt/sata/dmk/db/dmk.sqlite3
 ```
 
 Compose mounts that directory at `/data` inside the container, and the image
@@ -143,9 +143,15 @@ your old `.env`:
   **removed** from a Docker `.env` — it now describes a path inside the container,
   not on the host.
 
-The database schema is entirely new and there is no migration — the old tables are
-left alone and ignored, and the bot starts a fresh story. Point `DMK_DB_PATH` at a
-new filename if you'd rather keep the two completely separate.
+The database schema is entirely new and **there is no migration** — the old one
+couldn't represent more than one character per chat, which is the thing this
+revamp exists to fix. The new database is a separate file (`dmk.sqlite3`) in the
+same directory, so your old `main.sqlite3` is left untouched beside it.
+
+Opening a pre-revamp database is refused outright rather than half-upgraded: both
+schemas have an `achievement_grants` table with different columns, so applying the
+new schema over the old one fails partway. If you point `DMK_DB_PATH` at an old
+file, the bot says so and stops.
 
 Also, for group play: turn **off** privacy mode for the bot in @BotFather, or
 Telegram won't deliver ordinary messages to it and Keith will only see commands.

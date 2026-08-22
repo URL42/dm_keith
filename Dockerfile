@@ -22,7 +22,7 @@ WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    DMK_DB_PATH=/data/main.sqlite3
+    DMK_DB_PATH=/data/dmk.sqlite3
 
 COPY --from=builder /app/.venv /app/.venv
 COPY src ./src

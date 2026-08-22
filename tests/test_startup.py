@@ -120,3 +120,68 @@ async def test_outside_a_container_any_path_is_fine(
     monkeypatch.setattr(db, "in_container", lambda: False)
     conn = await connect(tmp_path / "anywhere.sqlite3")
     await conn.close()
+
+
+LEGACY_SCHEMA = Path(__file__).parent / "fixtures" / "legacy_schema.sql"
+
+
+async def test_a_database_from_the_old_bot_is_refused(tmp_path: Path) -> None:
+    """Reproduces the server failure: both schemas have achievement_grants, with
+    different columns, so the new index blew up with "no such column: character_id".
+    """
+    import aiosqlite
+
+    legacy_path = tmp_path / "main.sqlite3"
+    async with aiosqlite.connect(legacy_path) as legacy:
+        await legacy.executescript(LEGACY_SCHEMA.read_text())
+        await legacy.commit()
+
+    with pytest.raises(db.LegacyDatabase) as excinfo:
+        await connect(legacy_path)
+
+    message = str(excinfo.value)
+    assert "previous version of DM Keith" in message
+    assert "no migration" in message
+    # And it says what to do about it.
+    assert "DMK_DB_PATH" in message
+
+
+async def test_the_legacy_file_is_left_untouched(tmp_path: Path) -> None:
+    """Refusing must not modify the old database on the way out."""
+    import aiosqlite
+
+    legacy_path = tmp_path / "main.sqlite3"
+    async with aiosqlite.connect(legacy_path) as legacy:
+        await legacy.executescript(LEGACY_SCHEMA.read_text())
+        await legacy.commit()
+
+    async with aiosqlite.connect(legacy_path) as check:
+        cur = await check.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        before = {r[0] for r in await cur.fetchall()}
+
+    with pytest.raises(db.LegacyDatabase):
+        await connect(legacy_path)
+
+    async with aiosqlite.connect(legacy_path) as check:
+        cur = await check.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        after = {r[0] for r in await cur.fetchall()}
+
+    assert before == after
+    assert "campaigns" not in after
+
+
+async def test_a_fresh_database_beside_a_legacy_one_is_fine(tmp_path: Path) -> None:
+    """The documented fix: point at a new filename in the same directory."""
+    import aiosqlite
+
+    async with aiosqlite.connect(tmp_path / "main.sqlite3") as legacy:
+        await legacy.executescript(LEGACY_SCHEMA.read_text())
+        await legacy.commit()
+
+    conn = await connect(tmp_path / "dmk.sqlite3")
+    try:
+        cur = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = {r[0] for r in await cur.fetchall()}
+        assert {"campaigns", "characters", "achievement_grants"} <= tables
+    finally:
+        await conn.close()
