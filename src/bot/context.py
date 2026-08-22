@@ -141,8 +141,18 @@ async def reply(
         )
         return
 
+    sent = message
     for chunk in split_message(result.reply):
-        await message.reply_text(chunk)
+        sent = await message.reply_text(chunk)
+
+    # If Keith asked for a check, the dice go to the player -- hang the button off
+    # the end of his narration, where the cliffhanger is.
+    if result.pending_roll is not None:
+        from src.bot.rolls import prompt_for_roll
+
+        character = await get_repo(context).get_character_by_id(result.pending_roll.character_id)
+        if character is not None:
+            await prompt_for_roll(sent, result.pending_roll, character)
 
     await send_cues(context, chat.id, result.cues)
 

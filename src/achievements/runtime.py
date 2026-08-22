@@ -62,14 +62,20 @@ def format_block(achievement: Achievement) -> str:
     )
 
 
-def render_catalogue(limit: int | None = None) -> str:
-    """The menu Keith picks from, compact enough to sit in the instructions."""
+def render_catalogue(limit: int | None = None, exclude: set[str] | None = None) -> str:
+    """The menu Keith picks from.
+
+    Fetched via a tool rather than shipped in every prompt -- it's ~1200 tokens, and
+    most turns don't award anything.
+    """
     entries = sorted(
-        load_registry().values(),
+        (a for a in load_registry().values() if a.id not in (exclude or set())),
         key=lambda a: (RARITY_ORDER.index(a.rarity) if a.rarity in RARITY_ORDER else 99, a.id),
     )
     if limit is not None:
         entries = entries[:limit]
+    if not entries:
+        return "Nothing left in the catalogue that they haven't already earned."
     return "\n".join(f"- {a.id} ({a.rarity}): {a.title} — {a.description}" for a in entries)
 
 

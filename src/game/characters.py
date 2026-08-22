@@ -16,7 +16,9 @@ ABILITY_KEYS: tuple[str, ...] = ("str", "dex", "con", "int", "wis", "cha")
 XP_THRESHOLDS: tuple[int, ...] = (0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000)
 
 MAX_LEVEL = len(XP_THRESHOLDS)
-MIN_ABILITY = 1
+#: 3 is the floor 4d6-drop-lowest can produce, so nothing -- curse, cursed item or
+#: critical failure -- should ever push a character below what the dice could roll.
+MIN_ABILITY = 3
 MAX_ABILITY = 20
 
 #: The classic point-buy-ish spread, assigned to a character's priority order.

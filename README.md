@@ -32,6 +32,11 @@ Then, in Telegram:
 After that just type what you do — no command needed. `/sheet` and `/party` show
 character sheets, `/endgame` retires the campaign.
 
+When something you attempt could fail, Keith stops and hands you the dice: a 🎲
+button appears, and tapping it shows the roll, your modifier and the target number
+before he narrates what it cost you. He still rolls monster attacks and damage
+himself — only your own attempts are yours to roll.
+
 In a group, everyone who has run `/join` can act. If you're talking to another
 player rather than to Keith, @mention them and he'll stay out of it.
 
@@ -46,6 +51,7 @@ Everything is environment variables (see [.env.example](.env.example)):
 | `DMK_SUMMARY_MODEL` | Cheap model used only to compress old transcript into the campaign summary. |
 | `ANTHROPIC_API_KEY` etc. | Credentials for whichever provider you picked. Read by pydantic-ai directly. |
 | `DMK_DB_PATH` | SQLite file. Default `./local/dmk.sqlite3`. |
+| `DMK_EFFORT` | How hard the model thinks: `low`…`max`. Default `medium`. Anthropic only. |
 | `DMK_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, … |
 
 ### Switching models

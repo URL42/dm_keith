@@ -67,7 +67,11 @@ async def handle_newgame_confirm(update: Update, context: ContextTypes.DEFAULT_T
     # Retire it here, on the confirmation, rather than as a side effect of picking
     # a genre. That keeps "a campaign is live" a reliable signal that a stale genre
     # button shouldn't be honoured.
-    await get_repo(context).end_campaign(chat.id)
+    repo = get_repo(context)
+    existing = await repo.get_live_campaign(chat.id)
+    if existing is not None:
+        await repo.clear_pending_rolls(existing.id)
+    await repo.end_campaign(chat.id)
     await query.edit_message_text(
         "Retired. What kind of trouble are we getting into instead?",
         reply_markup=genre_keyboard(),
@@ -205,6 +209,9 @@ async def handle_endgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Nothing to end.")
         return
 
+    # Drop outstanding roll buttons too, so tapping a leftover one doesn't consume a
+    # roll into a campaign that no longer exists.
+    await repo.clear_pending_rolls(campaign.id)
     await repo.end_campaign(chat.id)
     await update.message.reply_text(
         "Campaign retired. The story is kept, but that's the end of it. /newgame when you're ready."

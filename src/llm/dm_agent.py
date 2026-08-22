@@ -13,13 +13,13 @@ from dataclasses import dataclass, field
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 
-from src.achievements.runtime import AchievementError, award
+from src.achievements.runtime import AchievementError, award, render_catalogue
 from src.game.characters import ABILITY_KEYS
 from src.game.dice import DiceParseError, format_roll, parse_dice_expression, roll_instruction
 from src.game.genres import Genre
 from src.game.memory import render_character
 from src.log import get_logger
-from src.storage.repo import Campaign, Character, Repo
+from src.storage.repo import Campaign, Character, PendingRoll, Repo
 
 log = get_logger(__name__)
 
@@ -52,6 +52,8 @@ class GameDeps:
     #: Count of tools that changed game state. Tools commit as they go, so if a turn
     #: fails partway this tells us whether the world already moved.
     mutations: int = 0
+    #: Set when Keith hands a roll to a player; the bot layer turns it into a button.
+    pending_roll: PendingRoll | None = None
 
 
 dm_agent = Agent(
@@ -148,6 +150,58 @@ async def roll_dice(
 
 
 @dm_agent.tool
+async def request_roll(
+    ctx: RunContext[GameDeps], character_name: str, ability: str, dc: int, reason: str
+) -> str:
+    """Ask a PLAYER to roll their own d20 check. Use this for their decisions.
+
+    This hands the dice to the player: they get a button, they see the number, and
+    you find out the result on your next turn. Use it whenever the outcome depends
+    on something their character is choosing to attempt -- sneaking, persuading,
+    climbing, disarming, resisting.
+
+    Call it at most once per turn, and END YOUR TURN immediately after. Narrate up
+    to the moment of tension and stop; do not guess the outcome or describe what
+    happens next. You'll be told the result and can narrate the consequence then.
+
+    For anything that isn't the player's own attempt -- damage dice, monster
+    attacks, NPC checks, random chance -- use roll_dice instead and keep going.
+
+    Args:
+        character_name: Whose check it is.
+        ability: One of str, dex, con, int, wis, cha.
+        dc: Target number. 10 routine, 15 hard, 20 heroic.
+        reason: What they're attempting, shown on the button.
+    """
+    ability = ability.strip().lower()
+    if ability not in ABILITY_KEYS:
+        raise ModelRetry(f"{ability!r} isn't an ability. Use one of: {', '.join(ABILITY_KEYS)}.")
+    if not 1 <= dc <= 30:
+        raise ModelRetry(f"A DC of {dc} is off the scale. Use 5-30, usually 10-20.")
+    if ctx.deps.pending_roll is not None:
+        # Only one button gets posted per turn, so a second request would leave a
+        # character owing a roll nothing ever offers them.
+        raise ModelRetry(
+            "You've already asked for a roll this turn. Finish your reply and wait "
+            "for it; ask anyone else next turn."
+        )
+
+    character = await _require_character(ctx, character_name)
+    pending = await ctx.deps.repo.create_pending_roll(
+        ctx.deps.campaign.id, character.id, ability, dc, reason
+    )
+    ctx.deps.pending_roll = pending
+    ctx.deps.mutations += 1
+    log.info("roll requested from %s: %s DC %s (%s)", character.name, ability, dc, reason)
+
+    return (
+        f"Asked {character.name} to roll {ability.upper()} against DC {dc}. "
+        "Finish your reply at the moment of tension and stop -- do not narrate the "
+        "outcome. You'll be told what they rolled."
+    )
+
+
+@dm_agent.tool
 async def update_hp(ctx: RunContext[GameDeps], character_name: str, delta: int, reason: str) -> str:
     """Apply damage or healing. Negative delta damages, positive heals.
 
@@ -161,6 +215,9 @@ async def update_hp(ctx: RunContext[GameDeps], character_name: str, delta: int, 
     ctx.deps.mutations += 1
 
     verb = "takes" if delta < 0 else "recovers"
+    log.info(
+        "hp %s %s %+d -> %s/%s (%s)", updated.name, verb, delta, updated.hp, updated.max_hp, reason
+    )
     note = f"{updated.name} {verb} {abs(delta)} HP ({reason}) → {updated.hp}/{updated.max_hp}"
     if updated.status == "dying":
         note += ". They are DOWN and dying -- narrate that, don't kill them outright."
@@ -188,6 +245,14 @@ async def grant_xp(ctx: RunContext[GameDeps], character_name: str, amount: int, 
     updated, levelled = await ctx.deps.repo.grant_xp(character.id, amount)
     ctx.deps.mutations += 1
 
+    log.info(
+        "xp %s +%s -> %s total, level %s (%s)",
+        updated.name,
+        amount,
+        updated.xp,
+        updated.level,
+        reason,
+    )
     note = f"{updated.name} gains {amount} XP ({reason}) → {updated.xp} total"
     if levelled:
         ctx.deps.cues.append("reward")
@@ -247,6 +312,7 @@ async def add_item(
     )
     ctx.deps.mutations += 1
     ctx.deps.cues.append("reward")
+    log.info("item +%s x%s to %s", item.name, item.quantity, character.name)
     return f"{character.name} now carries {item.name} x{item.quantity}."
 
 
@@ -267,6 +333,7 @@ async def remove_item(
         carried = ", ".join(i.name for i in character.items) or "nothing"
         raise ModelRetry(f"{character.name} isn't carrying {item_name!r}. They have: {carried}.")
     ctx.deps.mutations += 1
+    log.info("item -%s x%s from %s", item_name, quantity, character.name)
     return f"{character.name} no longer has {item_name} (x{quantity})."
 
 
@@ -297,17 +364,32 @@ async def record_event(
 
 
 @dm_agent.tool
+async def list_achievements(ctx: RunContext[GameDeps], character_name: str | None = None) -> str:
+    """The catalogue of achievements you can award, with their ids.
+
+    Call this only when something has happened that deserves an award -- the list is
+    long, and there's no reason to read it on an ordinary turn. Pass a character name
+    to hide the ones they already have.
+    """
+    earned: set[str] = set()
+    if character_name:
+        character = await _require_character(ctx, character_name)
+        earned = {aid for aid, _ in await ctx.deps.repo.list_achievements(character.id)}
+    return render_catalogue(exclude=earned)
+
+
+@dm_agent.tool
 async def award_achievement(
     ctx: RunContext[GameDeps], character_name: str, achievement_id: str
 ) -> str:
     """Award an achievement for a standout moment. Returns the 🏆 block to include.
 
     Only award these for genuinely notable beats -- a spectacular success or failure,
-    a first, a disaster. Not every turn.
+    a first, a disaster. Not every turn. Get valid ids from list_achievements.
 
     Args:
         character_name: Who earned it.
-        achievement_id: An id from the achievement catalogue in your instructions.
+        achievement_id: An id from list_achievements.
     """
     character = await _require_character(ctx, character_name)
     try:
@@ -322,4 +404,5 @@ async def award_achievement(
         )
     ctx.deps.mutations += 1
     ctx.deps.cues.append("new_achievement")
+    log.info("achievement %s -> %s", achievement_id, character.name)
     return f"Award granted. Include this block verbatim at the top of your reply:\n\n{block}"

@@ -110,7 +110,13 @@ def render_transcript(messages: list[Message], party: list[Character]) -> str:
 
 
 def build_instructions(campaign: Campaign, genre: Genre) -> str:
-    """System prompt plus the parts that change per campaign but not per turn."""
+    """The stable half of the prompt: persona, setting, rules.
+
+    Deliberately contains nothing that changes turn to turn. Campaign state lives in
+    the user prompt instead, which keeps this prefix byte-identical for the life of
+    a campaign -- and therefore cacheable, including across the 2-4 model calls a
+    single turn makes.
+    """
     ability_names = ", ".join(f"{k.upper()}={genre.ability_label(k)}" for k in ABILITY_KEYS)
     parts = [
         load_system_prompt(),
@@ -121,6 +127,35 @@ def build_instructions(campaign: Campaign, genre: Genre) -> str:
         f"Content tone: {campaign.tone}.",
     ]
     return "\n".join(parts)
+
+
+#: How many messages a campaign runs before never having awarded XP looks like an
+#: oversight rather than simply being early.
+XP_GRACE_MESSAGES = 8
+
+
+def render_progression(party: list[Character], messages_so_far: int) -> str:
+    """A nudge, shown only when someone has been adventuring without ever earning XP.
+
+    In real play Keith rolled dice and recorded events reliably but never once called
+    grant_xp, so nobody could ever level. This names the characters it has happened
+    to -- and disappears as soon as it stops being true, so it can't turn into
+    standing pressure to award XP every single turn. Current XP is already on each
+    character's sheet in the party block.
+    """
+    if messages_so_far < XP_GRACE_MESSAGES:
+        return ""
+
+    stalled = [c for c in party if c.xp == 0]
+    if not stalled:
+        return ""
+
+    names = ", ".join(c.name for c in stalled)
+    return (
+        f"{names} — still on 0 XP after {messages_so_far} messages of adventuring. "
+        "If they have overcome anything at all, award it with grant_xp; otherwise "
+        "they can never level up."
+    )
 
 
 async def build_turn_context(
@@ -146,6 +181,10 @@ async def build_turn_context(
 
     sections.append(f"## The party\n\n{render_party(party, genre)}")
 
+    nudge = render_progression(party, await repo.count_messages_after(campaign.id, 0))
+    if nudge:
+        sections.append(f"## Progression\n\n{nudge}")
+
     transcript = render_transcript(messages, party)
     if transcript:
         sections.append(f"## Recent turns\n\n{transcript}")
@@ -153,9 +192,18 @@ async def build_turn_context(
     return "\n\n".join(sections)
 
 
-def build_user_prompt(actor: Character | None, action: str) -> str:
-    """The triggering action, attributed so the DM knows who is speaking."""
+def build_user_prompt(actor: Character | None, action: str, context: str = "") -> str:
+    """Campaign state plus the triggering action, attributed to whoever acted.
+
+    State rides here rather than in the instructions so the instruction prefix stays
+    identical turn to turn and can be cached.
+    """
     if actor is None:
-        return action
-    played_by = f" (played by {actor.user_display})" if actor.user_display else ""
-    return f"{actor.name}{played_by} does this:\n\n{action}"
+        moment = action
+    else:
+        played_by = f" (played by {actor.user_display})" if actor.user_display else ""
+        moment = f"{actor.name}{played_by} does this:\n\n{action}"
+
+    if not context:
+        return moment
+    return f"{context}\n\n---\n\n{moment}"

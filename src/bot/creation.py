@@ -21,7 +21,7 @@ from telegram.ext import (
     filters,
 )
 
-from src.bot.context import get_repo, get_service, reply, user_state
+from src.bot.context import get_repo, get_service, reply, send_preformatted, user_state
 from src.game.characters import assign_standard_array, roll_abilities
 from src.game.genres import Genre, get_genre
 from src.game.memory import render_character
@@ -158,14 +158,24 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if archetype:
         for item in archetype.starting_items:
-            await repo.add_item(character.id, item, kind="gear")
+            await repo.add_item(
+                character.id,
+                item.name,
+                kind=item.kind,
+                description=item.description,
+                equippable=item.equippable,
+                stat_mods=item.stat_mods,
+            )
+            if item.equip_at_creation:
+                await repo.set_equipped(character.id, item.name, True)
 
     log.info("character %s (%s) joined campaign %s", character.name, user.id, campaign.id)
     user_state(context).clear()
 
-    await update.message.reply_text(
-        f"```\n{render_character(character, genre)}\n```", parse_mode=ParseMode.MARKDOWN
-    )
+    # Re-read so the sheet shows the kit, and the bonus from what they're holding.
+    character = await repo.get_character_by_id(character.id) or character
+
+    await send_preformatted(update.message, render_character(character, genre))
 
     if campaign.status == "active":
         # Mid-campaign arrival: Keith writes them into the scene.

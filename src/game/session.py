@@ -13,15 +13,16 @@ import time
 from dataclasses import dataclass, field
 
 from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModelSettings
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from src.achievements.runtime import render_catalogue
 from src.game.genres import get_genre
 from src.game.memory import build_instructions, build_turn_context, build_user_prompt
 from src.llm.dm_agent import GameDeps, dm_agent
 from src.llm.models import build_model
 from src.log import get_logger
-from src.storage.repo import Campaign, Character, Repo
+from src.storage.repo import Campaign, Character, PendingRoll, Repo
 
 log = get_logger(__name__)
 
@@ -35,12 +36,34 @@ TURN_LIMITS = UsageLimits(request_limit=12, tool_calls_limit=20)
 TURN_TIMEOUT_SECONDS = 180
 
 
+def anthropic_settings(model_spec: str, effort: str) -> ModelSettings | None:
+    """Provider-specific tuning, applied only where it's understood.
+
+    These keys are Anthropic-only; sending them to OpenAI, DeepSeek or Ollama would
+    at best be ignored and at worst rejected, so the provider prefix gates them.
+
+    Caching matters more here than it looks: a turn makes 2-4 model calls and each
+    one resends the whole prompt, so most of a turn's input tokens are repeats of
+    the previous call within the same turn.
+    """
+    if not model_spec.startswith("anthropic:"):
+        return None
+    return AnthropicModelSettings(
+        anthropic_cache_instructions=True,
+        anthropic_cache_tool_definitions=True,
+        anthropic_cache_messages=True,
+        anthropic_effort=effort,  # type: ignore[typeddict-item]
+    )
+
+
 @dataclass
 class TurnResult:
     """What the bot should do with a completed turn."""
 
     reply: str
     cues: list[str] = field(default_factory=list)
+    #: Set when Keith handed a roll to a player; the bot posts a button for it.
+    pending_roll: PendingRoll | None = None
 
 
 class TurnFailed(RuntimeError):
@@ -63,11 +86,18 @@ class CampaignEnded(TurnFailed):
 class GameService:
     """Orchestrates turns. One instance per process."""
 
-    def __init__(self, repo: Repo, model_spec: str, model: Model | None = None) -> None:
+    def __init__(
+        self,
+        repo: Repo,
+        model_spec: str,
+        model: Model | None = None,
+        effort: str = "medium",
+    ) -> None:
         """Build the service. `model` overrides the spec -- tests pass a fake here."""
         self.repo = repo
         self.model_spec = model_spec
         self._model = model if model is not None else build_model(model_spec)
+        self._settings = anthropic_settings(model_spec, effort)
         #: One lock per campaign, so a chat's turns resolve in order while different
         #: chats still run concurrently.
         self._locks: dict[int, asyncio.Lock] = {}
@@ -101,16 +131,10 @@ class GameService:
                     character_id=actor.id if actor else None,
                 )
 
-            context = await build_turn_context(self.repo, current)
-            instructions = "\n\n".join(
-                [
-                    build_instructions(current, genre),
-                    "## Achievement catalogue\n\n"
-                    "Award these with the award_achievement tool, by id, and sparingly.\n\n"
-                    + render_catalogue(),
-                    "## Campaign state\n\n" + context,
-                ]
-            )
+            # Instructions stay byte-identical across turns so they can be cached;
+            # everything that changes rides in the user prompt.
+            instructions = build_instructions(current, genre)
+            context = "## Campaign state\n\n" + await build_turn_context(self.repo, current)
 
             deps = GameDeps(
                 repo=self.repo,
@@ -124,11 +148,12 @@ class GameService:
             try:
                 result = await asyncio.wait_for(
                     dm_agent.run(
-                        build_user_prompt(actor, action),
+                        build_user_prompt(actor, action, context),
                         model=self._model,
                         deps=deps,
                         instructions=instructions,
                         usage_limits=TURN_LIMITS,
+                        model_settings=self._settings,
                     ),
                     timeout=TURN_TIMEOUT_SECONDS,
                 )
@@ -140,16 +165,23 @@ class GameService:
             reply = (result.output or "").strip()
             usage = result.usage
             log.info(
-                "turn campaign=%s model=%s %.1fs in=%s out=%s requests=%s",
+                "turn campaign=%s model=%s %.1fs in=%s out=%s cache_read=%s cache_write=%s "
+                "requests=%s",
                 campaign.id,
                 self.model_spec,
                 elapsed,
                 usage.input_tokens,
                 usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_write_tokens,
                 usage.requests,
             )
 
             if reply:
                 await self.repo.add_message(campaign.id, "dm", reply)
 
-            return TurnResult(reply=reply, cues=list(dict.fromkeys(deps.cues)))
+            return TurnResult(
+                reply=reply,
+                cues=list(dict.fromkeys(deps.cues)),
+                pending_roll=deps.pending_roll,
+            )

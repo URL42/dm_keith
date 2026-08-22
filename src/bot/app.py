@@ -33,6 +33,7 @@ from src.bot.commands import (
 from src.bot.context import CONN_KEY, REPO_KEY, SERVICE_KEY
 from src.bot.creation import build_join_handler
 from src.bot.play import handle_play
+from src.bot.rolls import ROLL_PREFIX, handle_roll
 from src.config import Settings
 from src.game.session import GameService
 from src.log import get_logger
@@ -91,6 +92,7 @@ def build_application(settings: Settings) -> Application:
     # Creation is a conversation, so it must see /join before anything else does.
     app.add_handler(build_join_handler())
 
+    app.add_handler(CallbackQueryHandler(handle_roll, pattern=f"^{ROLL_PREFIX}"))
     app.add_handler(CallbackQueryHandler(handle_genre_choice, pattern=f"^{GENRE_PREFIX}"))
     app.add_handler(
         CallbackQueryHandler(handle_newgame_confirm, pattern=f"^({CONFIRM_NEW}|{CANCEL_NEW})$")
@@ -111,7 +113,7 @@ def _startup(settings: Settings) -> Callable[[Application], Coroutine[Any, Any, 
             # Resolves the provider, so an unknown provider or a missing API key
             # fails here rather than mid-campaign. A typo'd *model name* still
             # gets through -- providers only reject those on the first real call.
-            service = GameService(repo, settings.model)
+            service = GameService(repo, settings.model, effort=settings.effort)
         except Exception:
             await conn.close()
             raise
@@ -120,7 +122,15 @@ def _startup(settings: Settings) -> Callable[[Application], Coroutine[Any, Any, 
         app.bot_data[REPO_KEY] = repo
         app.bot_data[SERVICE_KEY] = service
         log.info("database ready at %s", settings.db_path)
-        log.info("dm model=%s summary model=%s", settings.model, settings.summary_model)
+        log.info(
+            "dm model=%s effort=%s summary model=%s",
+            settings.model,
+            settings.effort,
+            settings.summary_model,
+        )
+        # Say so explicitly: an idle bot produces no further output, which otherwise
+        # looks indistinguishable from a hang.
+        log.info("listening for messages — send /newgame in Telegram to start")
 
     return post_init
 

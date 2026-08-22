@@ -67,18 +67,66 @@ async def test_the_model_sees_the_story_so_far(
     assert fresh is not None
     await service.take_turn(fresh, "I keep walking", hero)
 
-    instructions = seen[0]
-    assert "The party entered the crypt." in instructions
-    assert "Met Vex the fence" in instructions
-    assert "The corridor flickers into view." in instructions
-    assert "Thorn" in instructions
-    # The persona and the achievement catalogue ride along too.
-    assert "Dungeon Master Keith" in instructions
-    assert "icebox-raider" in instructions
+    instructions, prompt = seen[0], seen[1]
 
-    prompt = seen[1]
+    # Instructions hold only the stable half -- persona and setting. Keeping them
+    # byte-identical turn to turn is what makes the prefix cacheable.
+    assert "Dungeon Master Keith" in instructions
+    assert "The party entered the crypt." not in instructions
+    assert "The corridor flickers into view." not in instructions
+    # The achievement catalogue is fetched by tool now, not shipped every request.
+    assert "icebox-raider" not in instructions
+
+    # Everything that changes rides in the prompt instead.
+    assert "The party entered the crypt." in prompt
+    assert "Met Vex the fence" in prompt
+    assert "The corridor flickers into view." in prompt
     assert "Thorn" in prompt
     assert "I keep walking" in prompt
+
+
+async def test_the_instructions_are_identical_across_turns(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """The point of moving state out of instructions: an unchanging cacheable prefix."""
+    seen: list[str] = []
+    service = service_with(repo, capturing_model(seen))
+
+    await service.take_turn(campaign, "first thing", hero)
+    await service.take_turn(campaign, "second thing", hero)
+
+    # seen is [instructions, prompt, instructions, prompt]
+    assert seen[0] == seen[2]
+    assert seen[1] != seen[3]
+
+
+async def test_the_xp_nudge_appears_only_when_progression_has_stalled(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """Keith never called grant_xp in real play. The nudge fixes that without
+    turning into standing pressure to award XP every single turn."""
+    seen: list[str] = []
+    service = service_with(repo, capturing_model(seen))
+
+    # Early on, 0 XP is just being early -- no nudge. (The sheet still shows the
+    # number; what's absent is the "you should have awarded some by now" prompt.)
+    await service.take_turn(campaign, "we set off", hero)
+    assert "still on 0 XP" not in seen[1]
+    assert "## Progression" not in seen[1]
+
+    # After a while with nothing awarded, say so.
+    for _ in range(6):
+        await repo.add_message(campaign.id, "player", "more adventuring", character_id=hero.id)
+    seen.clear()
+    await service.take_turn(campaign, "still going", hero)
+    assert "still on 0 XP" in seen[1]
+    assert "Thorn" in seen[1]
+
+    # Once XP flows, the nudge disappears rather than nagging for more.
+    await repo.grant_xp(hero.id, 50)
+    seen.clear()
+    await service.take_turn(campaign, "onwards", hero)
+    assert "still on 0 XP" not in seen[1]
 
 
 async def test_context_survives_a_restart(repo: Repo, campaign: Campaign, hero: Character) -> None:
@@ -90,8 +138,8 @@ async def test_context_survives_a_restart(repo: Repo, campaign: Campaign, hero: 
     second = service_with(repo, capturing_model(seen))
     await second.take_turn(campaign, "I shout again", hero)
 
-    assert "I shout into the dark" in seen[0]
-    assert "Round one." in seen[0]
+    assert "I shout into the dark" in seen[1]
+    assert "Round one." in seen[1]
 
 
 async def test_turns_in_one_campaign_are_serialised(
@@ -165,3 +213,16 @@ def test_character_sheet_uses_genre_ability_names(hero: Character) -> None:
     assert "STR 14" in sheet
     assert f"HP {hero.hp}/{hero.max_hp}" in sheet
     assert "carrying: nothing" in sheet
+
+
+def test_anthropic_settings_only_apply_to_anthropic() -> None:
+    """Provider-specific keys must not leak to OpenAI, DeepSeek or a local model."""
+    from src.game.session import anthropic_settings
+
+    settings = anthropic_settings("anthropic:claude-opus-5", "medium")
+    assert settings is not None
+    assert settings["anthropic_cache_instructions"] is True
+    assert settings["anthropic_effort"] == "medium"
+
+    for spec in ("openai:gpt-5", "deepseek:deepseek-chat", "ollama:qwen3:14b"):
+        assert anthropic_settings(spec, "medium") is None

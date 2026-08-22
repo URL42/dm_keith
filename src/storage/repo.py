@@ -86,6 +86,18 @@ class Character:
 
 
 @dataclass(frozen=True)
+class PendingRoll:
+    """A check Keith has handed to a player to roll for themselves."""
+
+    id: int
+    campaign_id: int
+    character_id: int
+    ability: str
+    dc: int
+    reason: str
+
+
+@dataclass(frozen=True)
 class Message:
     id: int
     role: str
@@ -535,6 +547,73 @@ class Repo:
         )
         await self.conn.commit()
 
+    # -- pending player rolls ----------------------------------------------
+
+    async def create_pending_roll(
+        self, campaign_id: int, character_id: int, ability: str, dc: int, reason: str
+    ) -> PendingRoll:
+        """Ask a character for a roll, replacing any roll they already owe.
+
+        Delete-then-insert rather than an upsert, so the replacement gets a fresh id
+        and the superseded button in the chat can never be tapped into the new roll.
+        """
+        async with self._write_lock:
+            await self.conn.execute(
+                "DELETE FROM pending_rolls WHERE campaign_id = ? AND character_id = ?",
+                (campaign_id, character_id),
+            )
+            cur = await self.conn.execute(
+                "INSERT INTO pending_rolls (campaign_id, character_id, ability, dc, reason) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (campaign_id, character_id, ability, dc, reason),
+            )
+            await self.conn.commit()
+            roll_id = int(cur.lastrowid or 0)
+            cur = await self.conn.execute("SELECT * FROM pending_rolls WHERE id = ?", (roll_id,))
+            row = await cur.fetchone()
+
+        if row is None:
+            raise MissingRow("pending roll vanished immediately after insert")
+        return self._pending_roll(row)
+
+    async def claim_pending_roll(
+        self, roll_id: int, user_id: int
+    ) -> tuple[PendingRoll | None, Character | None]:
+        """Claim a roll on behalf of `user_id`.
+
+        Returns (roll, character) when claimed; (None, character) when it belongs to
+        somebody else, so the caller can say whose it is; (None, None) when it has
+        already been made or never existed.
+
+        The ownership test and the delete happen together under the write lock, so
+        two taps can't both come back with a roll and nobody can take another
+        player's.
+        """
+        async with self._write_lock:
+            cur = await self.conn.execute("SELECT * FROM pending_rolls WHERE id = ?", (roll_id,))
+            row = await cur.fetchone()
+            if row is None:
+                return None, None
+
+            character = await self.get_character_by_id(row["character_id"])
+            if character is None:
+                return None, None
+            if character.user_id != user_id:
+                return None, character
+
+            await self.conn.execute("DELETE FROM pending_rolls WHERE id = ?", (roll_id,))
+            await self.conn.commit()
+
+        return self._pending_roll(row), character
+
+    async def clear_pending_rolls(self, campaign_id: int) -> None:
+        """Drop every outstanding roll. Called when a campaign is retired."""
+        async with self._write_lock:
+            await self.conn.execute(
+                "DELETE FROM pending_rolls WHERE campaign_id = ?", (campaign_id,)
+            )
+            await self.conn.commit()
+
     async def has_achievement(self, character_id: int, achievement_id: str) -> bool:
         cur = await self.conn.execute(
             "SELECT 1 FROM achievement_grants WHERE character_id = ? AND achievement_id = ?",
@@ -603,6 +682,17 @@ class Repo:
             equipped=bool(row["equipped"]),
             consumable=bool(row["consumable"]),
             stat_mods=_json_load(row["stat_mods"], {}),
+        )
+
+    @staticmethod
+    def _pending_roll(row: aiosqlite.Row) -> PendingRoll:
+        return PendingRoll(
+            id=row["id"],
+            campaign_id=row["campaign_id"],
+            character_id=row["character_id"],
+            ability=row["ability"],
+            dc=row["dc"],
+            reason=row["reason"],
         )
 
     @staticmethod

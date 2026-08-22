@@ -88,6 +88,24 @@ CREATE TABLE IF NOT EXISTS dice_rolls (
     created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A check Keith has asked a player to roll for themselves. The row exists only
+-- between his asking and the player tapping the button, and is deleted the moment
+-- it's taken, so a double tap can't roll twice.
+CREATE TABLE IF NOT EXISTS pending_rolls (
+    -- AUTOINCREMENT so ids are never reused. A button lives in the chat forever;
+    -- if a deleted row's id came round again, an old button would silently claim
+    -- a different, newer roll -- wrong ability, wrong DC.
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id  INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
+    character_id INTEGER NOT NULL REFERENCES characters (id) ON DELETE CASCADE,
+    ability      TEXT    NOT NULL,
+    dc           INTEGER NOT NULL,
+    reason       TEXT    NOT NULL DEFAULT '',
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    -- One outstanding roll per character; two players can each owe one.
+    UNIQUE (campaign_id, character_id)
+);
+
 CREATE TABLE IF NOT EXISTS achievement_grants (
     id             INTEGER PRIMARY KEY,
     campaign_id    INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,

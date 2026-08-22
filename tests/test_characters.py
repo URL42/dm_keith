@@ -54,7 +54,9 @@ def test_max_hp_grows_with_level_and_con() -> None:
 
 def test_clamp_and_normalise() -> None:
     assert clamp_ability(25) == 20
-    assert clamp_ability(-3) == 1
+    # 3 is the floor 4d6-drop-lowest can roll, so nothing goes below it.
+    assert clamp_ability(-3) == 3
+    assert clamp_ability(1) == 3
     scores = normalise_abilities({"str": 99, "bogus": 5})
     assert scores["str"] == 20
     assert "bogus" not in scores

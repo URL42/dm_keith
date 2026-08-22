@@ -29,8 +29,20 @@ class Settings(BaseModel):
     summary_model: str = DEFAULT_SUMMARY_MODEL
     db_path: Path = Path("local/dmk.sqlite3")
     log_level: str = "INFO"
+    #: How hard the model thinks per turn. Narration doesn't need the default 'high',
+    #: and lower settings are markedly faster and cheaper. Anthropic models only.
+    effort: str = "medium"
 
     model_config = {"frozen": True}
+
+    @field_validator("effort")
+    @classmethod
+    def _known_effort(cls, value: str) -> str:
+        level = value.lower()
+        valid = {"low", "medium", "high", "xhigh", "max"}
+        if level not in valid:
+            raise ValueError(f"DMK_EFFORT must be one of {sorted(valid)}, got {value!r}")
+        return level
 
     @field_validator("log_level")
     @classmethod
@@ -67,4 +79,5 @@ def get_settings() -> Settings:
         summary_model=os.getenv("DMK_SUMMARY_MODEL", DEFAULT_SUMMARY_MODEL),
         db_path=Path(os.getenv("DMK_DB_PATH", "local/dmk.sqlite3")),
         log_level=os.getenv("DMK_LOG_LEVEL", "INFO"),
+        effort=os.getenv("DMK_EFFORT", "medium"),
     )

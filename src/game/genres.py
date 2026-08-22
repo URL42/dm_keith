@@ -13,6 +13,22 @@ from src.game.characters import ABILITY_KEYS
 
 
 @dataclass(frozen=True)
+class StartingItem:
+    """A piece of kit a character begins with.
+
+    D&D hands out equipment by class and background; this is the same idea, kept
+    light. `equip_at_creation` picks the one thing they're holding when play starts.
+    """
+
+    name: str
+    kind: str = "gear"
+    description: str = ""
+    equippable: bool = False
+    equip_at_creation: bool = False
+    stat_mods: dict[str, int] | None = None
+
+
+@dataclass(frozen=True)
 class Archetype:
     """A genre's answer to "class"."""
 
@@ -20,7 +36,7 @@ class Archetype:
     blurb: str
     #: Abilities in priority order; the standard array is dealt out down this list.
     priority: tuple[str, ...]
-    starting_items: tuple[str, ...] = ()
+    starting_items: tuple[StartingItem, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,31 +83,94 @@ FANTASY = Genre(
             "Fighter",
             "Solves problems with a sword. Solves other problems with a bigger sword.",
             ("str", "con", "dex", "wis", "cha", "int"),
-            ("Worn longsword", "Dented shield", "Rations"),
+            (
+                StartingItem(
+                    "Worn longsword",
+                    "weapon",
+                    "Notched, reliable, and heavier than it looks.",
+                    equippable=True,
+                    equip_at_creation=True,
+                    stat_mods={"str": 1},
+                ),
+                StartingItem(
+                    "Dented shield", "armour", "It has stopped things before.", equippable=True
+                ),
+                StartingItem("Rations", "supply", "Three days of aggressively beige food."),
+            ),
         ),
         Archetype(
             "Rogue",
             "Professionally sneaky. Allegedly reformed.",
             ("dex", "cha", "int", "con", "wis", "str"),
-            ("Twin daggers", "Lockpicks", "Suspiciously heavy purse"),
+            (
+                StartingItem(
+                    "Twin daggers",
+                    "weapon",
+                    "Quick, quiet, and easy to explain away.",
+                    equippable=True,
+                    equip_at_creation=True,
+                    stat_mods={"dex": 1},
+                ),
+                StartingItem(
+                    "Lockpicks", "tool", "For doors that were being unreasonable.", equippable=True
+                ),
+                StartingItem("Suspiciously heavy purse", "treasure", "Best not to ask."),
+            ),
         ),
         Archetype(
             "Wizard",
             "Has read every book in the tower. Has fought approximately nothing.",
             ("int", "wis", "con", "dex", "cha", "str"),
-            ("Spellbook", "Gnarled staff", "Component pouch"),
+            (
+                StartingItem(
+                    "Gnarled staff",
+                    "implement",
+                    "A focus for spellwork, and a serviceable walking stick.",
+                    equippable=True,
+                    equip_at_creation=True,
+                    stat_mods={"int": 1},
+                ),
+                StartingItem(
+                    "Spellbook", "implement", "Everything you know, and several things you don't."
+                ),
+                StartingItem("Component pouch", "supply", "Bat guano, chalk, and worse."),
+            ),
         ),
         Archetype(
             "Cleric",
             "On speaking terms with something enormous.",
             ("wis", "con", "str", "cha", "int", "dex"),
-            ("Holy symbol", "Mace", "Bandages"),
+            (
+                StartingItem(
+                    "Holy symbol",
+                    "implement",
+                    "A direct line, allegedly.",
+                    equippable=True,
+                    equip_at_creation=True,
+                    stat_mods={"wis": 1},
+                ),
+                StartingItem("Mace", "weapon", "Blunt theology.", equippable=True),
+                StartingItem("Bandages", "supply", "For when faith runs late."),
+            ),
         ),
         Archetype(
             "Bard",
             "Talks first, thinks later, rhymes throughout.",
             ("cha", "dex", "int", "con", "wis", "str"),
-            ("Lute", "Rapier", "Book of terrible poetry"),
+            (
+                StartingItem(
+                    "Lute",
+                    "implement",
+                    "Slightly out of tune, permanently.",
+                    equippable=True,
+                    equip_at_creation=True,
+                    stat_mods={"cha": 1},
+                ),
+                StartingItem("Rapier", "weapon", "Mostly for punctuation.", equippable=True),
+                StartingItem(
+                    "Book of terrible poetry", "treasure", "Your own. Unpublished, mercifully."
+                ),
+            ),
         ),
     ),
     origins=(
