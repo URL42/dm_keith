@@ -174,7 +174,7 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     # Re-read so the sheet shows the kit, and the bonus from what they're holding.
     character = await repo.get_character_by_id(character.id) or character
 
-    await send_preformatted(update.message, render_character(character, genre))
+    await send_preformatted(update.message, render_character(character, genre, include_player=True))
 
     if campaign.status == "active":
         # Mid-campaign arrival: Keith writes them into the scene.

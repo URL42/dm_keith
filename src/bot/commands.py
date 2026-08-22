@@ -295,7 +295,7 @@ async def handle_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     genre = genre_for(campaign)
-    await send_preformatted(update.message, render_character(character, genre))
+    await send_preformatted(update.message, render_character(character, genre, include_player=True))
 
 
 async def handle_party(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -316,7 +316,7 @@ async def handle_party(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     genre = genre_for(campaign)
-    sheets = "\n\n".join(render_character(c, genre) for c in party)
+    sheets = "\n\n".join(render_character(c, genre, include_player=True) for c in party)
     await send_preformatted(update.message, sheets)
 
 

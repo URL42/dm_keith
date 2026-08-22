@@ -204,7 +204,8 @@ async def test_transcript_renders_speakers_by_character_name(
 def test_user_prompt_names_the_actor(hero: Character) -> None:
     prompt = build_user_prompt(hero, "I kick the door")
     assert "Thorn" in prompt
-    assert "@hank" in prompt
+    # By character name only -- a handle here ends up in the narration.
+    assert "@hank" not in prompt
     assert "I kick the door" in prompt
     # No actor means no attribution wrapper.
     assert build_user_prompt(None, "The world turns") == "The world turns"
@@ -218,17 +219,43 @@ def test_character_sheet_uses_genre_ability_names(hero: Character) -> None:
     assert "carrying: nothing" in sheet
 
 
-def test_anthropic_settings_only_apply_to_anthropic() -> None:
-    """Provider-specific keys must not leak to OpenAI, DeepSeek or a local model."""
-    from src.game.session import anthropic_settings
+def test_provider_specific_settings_do_not_leak() -> None:
+    """Anthropic-only keys must not reach OpenAI, DeepSeek or a local model."""
+    from src.game.session import MAX_REPLY_TOKENS, model_settings_for
 
-    settings = anthropic_settings("anthropic:claude-opus-5", "medium")
-    assert settings is not None
-    assert settings["anthropic_cache_instructions"] is True
-    assert settings["anthropic_effort"] == "medium"
+    anthropic = model_settings_for("anthropic:claude-opus-5", "medium")
+    assert anthropic["anthropic_cache_instructions"] is True
+    assert anthropic["anthropic_effort"] == "medium"
 
     for spec in ("openai:gpt-5", "deepseek:deepseek-chat", "ollama:qwen3:14b"):
-        assert anthropic_settings(spec, "medium") is None
+        settings = model_settings_for(spec, "medium")
+        assert not any(k.startswith("anthropic_") for k in settings)
+        # But the reply-length ceiling applies everywhere -- a 1,200-word
+        # monologue on DeepSeek is what prompted it.
+        assert settings["max_tokens"] == MAX_REPLY_TOKENS
+
+    assert anthropic["max_tokens"] == MAX_REPLY_TOKENS
+
+
+async def test_the_dm_never_sees_a_players_handle(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """@handles leaked into the fiction because they were in the prompt twice."""
+    seen: list[str] = []
+    service = service_with(repo, capturing_model(seen))
+    await service.take_turn(campaign, "I say hello", hero)
+
+    assert hero.user_display == "@hank"
+    assert "@hank" not in seen[0]  # instructions
+    assert "@hank" not in seen[1]  # prompt: sheets, transcript and the action
+    # The character name is still there -- that's how the DM addresses them.
+    assert "Thorn" in seen[1]
+
+
+def test_the_sheet_players_see_still_names_them(hero: Character) -> None:
+    """The handle is useful to humans, just not to the narrator."""
+    assert "@hank" in render_character(hero, FANTASY, include_player=True)
+    assert "@hank" not in render_character(hero, FANTASY)
 
 
 def test_a_stored_genre_survives_a_new_field_on_starting_item() -> None:

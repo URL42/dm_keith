@@ -36,19 +36,28 @@ TURN_LIMITS = UsageLimits(request_limit=12, tool_calls_limit=20)
 TURN_TIMEOUT_SECONDS = 180
 
 
-def anthropic_settings(model_spec: str, effort: str) -> ModelSettings | None:
-    """Provider-specific tuning, applied only where it's understood.
+#: A ceiling on one reply. The prompt asks for under 200 words; in real play a
+#: turn ran to 1,200, narrating three scenes and taking the player's decisions for
+#: them. This is a backstop against that, not the target -- it leaves room for a
+#: long-but-reasonable turn while making a runaway monologue impossible.
+MAX_REPLY_TOKENS = 900
 
-    These keys are Anthropic-only; sending them to OpenAI, DeepSeek or Ollama would
-    at best be ignored and at worst rejected, so the provider prefix gates them.
+
+def model_settings_for(model_spec: str, effort: str) -> ModelSettings:
+    """Per-turn model settings.
+
+    `max_tokens` applies everywhere. The `anthropic_*` keys don't: sending them to
+    OpenAI, DeepSeek or Ollama would at best be ignored and at worst rejected, so
+    the provider prefix gates them.
 
     Caching matters more here than it looks: a turn makes 2-4 model calls and each
     one resends the whole prompt, so most of a turn's input tokens are repeats of
     the previous call within the same turn.
     """
     if not model_spec.startswith("anthropic:"):
-        return None
+        return ModelSettings(max_tokens=MAX_REPLY_TOKENS)
     return AnthropicModelSettings(
+        max_tokens=MAX_REPLY_TOKENS,
         anthropic_cache_instructions=True,
         anthropic_cache_tool_definitions=True,
         anthropic_cache_messages=True,
@@ -97,7 +106,7 @@ class GameService:
         self.repo = repo
         self.model_spec = model_spec
         self._model = model if model is not None else build_model(model_spec)
-        self._settings = anthropic_settings(model_spec, effort)
+        self._settings = model_settings_for(model_spec, effort)
         #: One lock per campaign, so a chat's turns resolve in order while different
         #: chats still run concurrently.
         self._locks: dict[int, asyncio.Lock] = {}
@@ -108,7 +117,7 @@ class GameService:
         return self._model
 
     @property
-    def settings(self) -> ModelSettings | None:
+    def settings(self) -> ModelSettings:
         return self._settings
 
     def lock_for(self, campaign_id: int) -> asyncio.Lock:

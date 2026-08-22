@@ -34,15 +34,30 @@ def load_system_prompt() -> str:
     return SYSTEM_PROMPT_PATH.read_text()
 
 
-def render_character(character: Character, genre: Genre, *, detailed: bool = True) -> str:
-    """One character sheet, compact enough to send every single turn."""
+def render_character(
+    character: Character,
+    genre: Genre,
+    *,
+    detailed: bool = True,
+    include_player: bool = False,
+) -> str:
+    """One character sheet, compact enough to send every single turn.
+
+    `include_player` adds the Telegram handle, and defaults off: this render goes
+    into the prompt every turn, and a handle sitting in the DM's context is a handle
+    that ends up in the narration -- "@unrealizedlosses" turning up inside the
+    fiction is exactly what happened. Human-facing views pass it explicitly.
+    """
     scores = character.effective_abilities()
     lines = [
-        f"{character.name} — level {character.level} {character.origin} {character.archetype}".rstrip(),
-        f"  played by {character.user_display or 'unknown'}",
-        f"  HP {character.hp}/{character.max_hp}"
-        + (f"  ({character.status.upper()})" if character.status != "active" else ""),
+        f"{character.name} — level {character.level} {character.origin} {character.archetype}".rstrip()
     ]
+    if include_player:
+        lines.append(f"  played by {character.user_display or 'unknown'}")
+    lines.append(
+        f"  HP {character.hp}/{character.max_hp}"
+        + (f"  ({character.status.upper()})" if character.status != "active" else "")
+    )
 
     abilities = "  ".join(
         f"{genre.ability_label(k)[:3].upper()} {scores[k]}({ability_modifier(scores[k]):+d})"
@@ -197,11 +212,9 @@ def build_user_prompt(actor: Character | None, action: str, context: str = "") -
     State rides here rather than in the instructions so the instruction prefix stays
     identical turn to turn and can be cached.
     """
-    if actor is None:
-        moment = action
-    else:
-        played_by = f" (played by {actor.user_display})" if actor.user_display else ""
-        moment = f"{actor.name}{played_by} does this:\n\n{action}"
+    # No handle here either: the DM refers to people by character name, and anything
+    # in this prompt is something it might repeat back in the story.
+    moment = action if actor is None else f"{actor.name} does this:\n\n{action}"
 
     if not context:
         return moment
