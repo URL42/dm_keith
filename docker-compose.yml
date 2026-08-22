@@ -1,13 +1,12 @@
-version: "3.9"
-
 services:
   bot:
     build: .
-    env_file:
-      - .env
+    env_file: .env
     volumes:
+      # The campaign database lives here -- keep this volume and your stories
+      # survive image rebuilds.
       - dmk_data:/app/local
     restart: unless-stopped
 
 volumes:
-  dmk_data: {}
+  dmk_data:

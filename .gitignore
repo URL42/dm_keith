@@ -1,14 +1,23 @@
+# Python
 __pycache__/
 *.py[cod]
-*.sqlite3-journal
-.coverage
+.venv/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.coverage
+
+# Secrets -- never commit these
 .env
-ACHIEVEMENT_SPEC.md
-CODEX_TASK.md
-GETTING_STARTED.md
+*.pem
+*.key
+credentials.json
+
+# Local campaign databases
 local/
 db/
+*.sqlite3
+*.sqlite3-journal
+
+# macOS
 .DS_Store

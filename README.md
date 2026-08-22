@@ -2,121 +2,100 @@
 
 ![DM Keith](assets/profile/dmk.png)
 
-Dungeon Master Keith is a sarcastic omniscient narrator persona built with the OpenAI Agents SDK. Every major reply starts with an achievement block, followed by theatrical narration or comedic analysis. The runtime supports multiple modes (narrator, achievements-only, explain, story) and exposes a Telegram bot bridge for live play sessions.
+A sarcastic AI dungeon master that runs persistent, multiplayer campaigns over Telegram.
+
+Keith picks a genre with you, helps everyone roll up a character, then narrates the
+campaign — rolling dice, handing out loot, tracking HP and XP, and remembering what
+happened forty turns ago. The model doing the narrating is a config line: Claude,
+OpenAI, DeepSeek, or a local model on your own hardware.
+
+> **Status: mid-revamp.** Milestone 1 (storage, config, packaging, bot skeleton) is
+> done. The DM agent and campaign commands land in milestone 2 — see
+> [Roadmap](#roadmap).
 
 ## Quickstart
 
-1. **Clone & install**
-   ```bash
-   uv sync
-   ```
-   The project targets Python 3.11+ and manages dependencies via [`uv`](https://github.com/astral-sh/uv). If you prefer `pip`, use `pip install -r requirements.txt` after running `uv pip compile` (optional).
-
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   ```
-   Fill in:
-   - `OPENAI_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - Optional tweaks (`DMK_PROFANITY_LEVEL`, `DMK_TANGENTS_LEVEL`, etc.)
-
-3. **Initialize the database**
-   ```bash
-   uv run python -m src.engine.storage.setup_db
-   ```
-   (The helper will create the SQLite file defined by `DMK_DB_PATH` and apply migrations.)
-
-4. **Run the Telegram bot (long polling)**
-   ```bash
-   uv run python -m src.bots.telegram_bot
-   ```
-   Start a conversation with your bot, use `/mode narrator` or `/mode explain`, and DMK will greet you with achievements on every major response.
-
-5. **Create your character for story mode**
-   ```bash
-   /character new
-   /character name Rin Starweaver
-   /character race Elf
-   /character class Wizard
-   /character finalize
-   ```
-   Keith auto-rolls all six ability scores for you when you run `/character new` (or `/restart`).
-   Once finalized, switch to story mode with `/mode story`, use `/story` to recap the current scene, `/choose <id>` to pick options, and `/roll <expression>` for manual dice checks (manual rolls are saved and applied to the next matching ability check).
-
-## Project Layout
-
-- `src/engine/` — achievement runtime, mode router, storage helpers.
-- `src/bots/` — Telegram polling bot that bridges updates to the Agents SDK.
-- `src/config/toggles.py` — environment-driven feature flags and paths.
-- `prompts/system/` — system prompts fed into the Agents SDK.
-- `characters/` — machine-readable persona definitions for orchestration.
-- `docs/` — persona contract and database schema reference.
-- `assets/profile/dmk.png` — production avatar for DMK.
-- `tests/` — pytest suite mirroring source layout.
-
-## Modes & Behaviors
-
-- **Narrator**: cinematic narration after every user message. Default mode.
-- **Achievements**: short, achievement-first responses for quick banter.
-- **Explain**: artifact/file analysis with comedic tangents (uploads or `/mode explain`).
-- **Story**: fully interactive dungeon crawl that tracks character sheets, XP, and dice checks. DMK presents numbered choices, calls out stored rolls, and remembers your progress.
-
-### Story & Dice Commands
-
-- `/character` — manage your character sheet (Keith auto-rolls stats; you set name/race/class/backstory).
-- `/restart` — re-roll stats and restart the campaign from the top.
-- `/profile` — quick readout of the current character sheet.
-- `/inventory` — view or adjust your gear (`/inventory add torch 2`).
-- `/story` — recap the active scene and available choices.
-- `/choose <id>` — pick a story option (equivalent to replying with the text).
-- `/roll <expression>` — roll dice with advantage/disadvantage or ability modifiers (e.g. `/roll 1d20adv+3`, `/roll str`). Stored rolls are consumed automatically on the next matching check.
-- `/history [n]` — list recent dice rolls (defaults to 5).
-- Story choices tagged with things like `chaos`, `risk`, `puzzle`, etc. trigger auto ability checks; Keith announces the roll result (and whether it was auto-rolled or came from your stored `/roll`).
-
-Keith now awards achievements only when something interesting happens—big choices, mode shifts, clutch rolls. When a block appears, expect the usual `Title`, `Description`, `Reward`, `Rarity` format followed by 1–2 theatrical paragraphs. The runtime enforces cooldowns and dedupes via SQLite so users earn trophies deliberately.
-
-## Development Commands
-
-| Command | Description |
-| --- | --- |
-| `make setup` | Install dependencies, configure pre-commit hooks, copy `.env.example`. |
-| `make lint` | Run `ruff`, `black`, and `mypy`. |
-| `make test` | Execute pytest with coverage (`pytest --cov=src`). |
-| `uv run python tools/validate_story.py` | Validate that story JSON files reference valid scenes. |
-| `make dev` | Launches local TMUX session with runtime + bot watchers (customize as needed). |
-
-Ensure `make lint` and `make test` pass before opening a PR.
-
-## Testing
-
-The suite focuses on:
-- Achievement registry schema and JSON integrity.
-- Deduping/cooldown logic for `award_achievement`.
-- Toggle parsing and validation.
-- Prompt conformance (achievement block + tone).
-
-Run everything with:
 ```bash
-uv run pytest
+uv sync --extra dev
+cp .env.example .env      # fill in TELEGRAM_BOT_TOKEN and one provider key
+make run
 ```
 
-## Docker / Compose
+Then message your bot on Telegram: `/start`.
 
-Build and run the bot with Docker (tap-to-play audio clips still work):
-1) Copy `.env.example` to `.env` and fill in keys. Ensure `DMK_DB_PATH` points inside `/app/local/dev.sqlite3` (the default).
-2) Build and start:
-   ```bash
-   docker compose up --build
-   ```
-   The SQLite DB is persisted in the named volume `dmk_data`.
-3) To rebuild after code changes:
-   ```bash
-   docker compose up --build --force-recreate
-   ```
+## Configuration
 
-## Deployment Notes
+Everything is environment variables (see [.env.example](.env.example)):
 
-- Long polling is used for Telegram during early development. When deploying behind Cloudflare or another edge, swap in webhook mode (see bot module for TODO hook).
-- SQLite lives at `DMK_DB_PATH` with WAL mode enabled. Future migrations will target a managed database service; see `docs/DB_SCHEMA.sql` for schema details.
-- Store persona-wide decisions (rating, profanity, tangents) via the toggles module for consistent behavior across surfaces.
+| Variable | Purpose |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Required. From [@BotFather](https://t.me/BotFather). |
+| `DMK_MODEL` | The DM's model, as `provider:model`. Default `anthropic:claude-opus-5`. |
+| `DMK_SUMMARY_MODEL` | Cheap model used only to compress old transcript into the campaign summary. |
+| `ANTHROPIC_API_KEY` etc. | Credentials for whichever provider you picked. Read by pydantic-ai directly. |
+| `DMK_DB_PATH` | SQLite file. Default `./local/dmk.sqlite3`. |
+| `DMK_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, … |
+
+### Switching models
+
+Change one line and restart:
+
+```bash
+DMK_MODEL=anthropic:claude-opus-5     # Claude
+DMK_MODEL=openai:gpt-5                # OpenAI
+DMK_MODEL=deepseek:deepseek-chat      # DeepSeek
+DMK_MODEL=ollama:qwen3:14b            # local, needs OLLAMA_BASE_URL
+```
+
+Campaign history lives in our own database rather than in provider-specific message
+objects, so a campaign started on Claude continues on a local model without losing
+anything.
+
+## Development
+
+```bash
+make check    # ruff + mypy + pytest
+make test
+make fmt
+```
+
+Layout:
+
+```
+src/
+  main.py       entrypoint (python -m src.main)
+  config.py     environment settings
+  storage/      schema.sql + async repository (all SQL lives here)
+  game/         dice, character maths, genres, memory assembly
+  llm/          model factory + the DM agent and its tools
+  bot/          Telegram handlers
+  achievements/ registry + award rules
+```
+
+Design notes worth knowing:
+
+- **Async all the way down.** aiosqlite and pydantic-ai are both async, so one
+  player's turn never blocks another chat. Ruff's `ASYNC` rules guard against
+  regressions here.
+- **One character per player per campaign** (`UNIQUE (campaign_id, user_id)`), which
+  is what makes group play work.
+- **All SQL is in `storage/repo.py`.** Everything else talks to typed dataclasses.
+
+## Deployment
+
+```bash
+docker compose up --build -d
+```
+
+The `dmk_data` named volume holds the campaign database — keep it and your stories
+survive image rebuilds.
+
+## Roadmap
+
+| Milestone | Contents | Status |
+| --- | --- | --- |
+| M1 | Storage, config, logging, packaging, bot skeleton | ✅ done |
+| M2 | DM agent + tools, `/newgame`, `/join`, solo play | next |
+| M3 | Rolling memory, level-ups, items, all genres | |
+| M4 | Multiplayer group play | |
+| M5 | Achievements, sound cues, provider smoke tests, deploy | |

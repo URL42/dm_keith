@@ -1,37 +1,36 @@
-FROM python:3.11-slim AS base
+# Build stage: resolve dependencies into a self-contained virtualenv.
+# Deps come from uv.lock, so the image can never drift from pyproject.toml the way
+# the old hand-written `pip install` layer did.
+FROM python:3.11-slim AS builder
 
-ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    DMK_DB_PATH=/app/local/dev.sqlite3 \
-    DMK_DEFAULT_MODE=narrator \
-    DMK_PROFANITY_LEVEL=3 \
-    DMK_RATING=PG-13 \
-    DMK_MODEL=gpt-4o \
-    DMK_TANGENTS_LEVEL=1 \
-    DMK_ACHIEVEMENT_DENSITY=normal
+COPY --from=ghcr.io/astral-sh/uv:0.7.13 /uv /usr/local/bin/uv
 
 WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
-# Install runtime dependencies (mirrors pyproject runtime deps).
-RUN pip install --upgrade --no-cache-dir pip && \
-    pip install --no-cache-dir \
-      "openai>=1.40.0" \
-      "python-telegram-bot>=21.0" \
-      "python-dotenv>=1.0" \
-      "pydantic>=2.7" \
-      "tenacity>=8.2" \
-      "typing-extensions>=4.9"
+# Dependency layer -- cached until pyproject/uv.lock actually change.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
-# Copy source last to maximize cache hits on dependency layer.
-COPY pyproject.toml README.md ./
+# Runtime stage.
+FROM python:3.11-slim
+
+WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DMK_DB_PATH=/app/local/dmk.sqlite3
+
+COPY --from=builder /app/.venv /app/.venv
 COPY src ./src
-COPY assets ./assets
 COPY prompts ./prompts
-COPY characters ./characters
-COPY docs ./docs
-COPY tools ./tools
+COPY assets ./assets
 
-# Ensure local storage directory exists for SQLite WAL.
-RUN mkdir -p /app/local
+# The bot holds the Telegram token and the campaign database; it has no business
+# running as root. /app/local is the compose volume mount point.
+RUN useradd --create-home --uid 1000 keith \
+    && mkdir -p /app/local \
+    && chown -R keith:keith /app
+USER keith
 
-ENTRYPOINT ["python", "-m", "src.bots.telegram_bot"]
+CMD ["python", "-m", "src.main"]

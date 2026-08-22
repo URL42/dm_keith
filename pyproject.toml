@@ -1,31 +1,39 @@
 [project]
 name = "dm-keith"
-version = "0.1.0"
-description = "Dungeon Master Keith — sarcastic dungeon master AI persona with Telegram bot integration"
+version = "0.2.0"
+description = "Dungeon Master Keith — a sarcastic AI dungeon master that runs persistent, multiplayer campaigns over Telegram"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "openai>=1.40.0",
+    # pydantic-ai-slim + the provider extras we actually use. The `openai` extra
+    # covers DeepSeek and Ollama too, since both speak the OpenAI chat protocol.
+    "pydantic-ai-slim[anthropic,openai]>=1.0",
     "python-telegram-bot>=21.0",
+    "aiosqlite>=0.20",
     "python-dotenv>=1.0",
     "pydantic>=2.7",
-    "tenacity>=8.2",
-    "typing-extensions>=4.9",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
+    "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "ruff>=0.5",
-    "black>=24.4",
     "mypy>=1.10",
 ]
 
+# DM Keith is an application, not a library -- uv installs the dependencies but
+# does not try to build `src` as a distributable package.
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-q --cov=src --cov-report=term-missing"
+addopts = "-q"
 testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 branch = true
@@ -33,3 +41,33 @@ source = ["src"]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "ASYNC",  # blocking calls in async code — the bug that broke the old bot
+    "RUF",
+]
+ignore = [
+    "E501",  # line length is handled by the formatter
+]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["telegram.*"]
+ignore_missing_imports = true
