@@ -32,10 +32,21 @@ Then, in Telegram:
 After that just type what you do — no command needed. `/sheet` and `/party` show
 character sheets, `/endgame` retires the campaign.
 
+`/newgame` offers the built-in genres, but you can also just type one — cyberpunk,
+pirates, cosy village mystery — and the setting is generated for you, with its own
+archetypes, origins and names for the six abilities. It's stored with the campaign,
+so it survives restarts.
+
 When something you attempt could fail, Keith stops and hands you the dice: a 🎲
 button appears, and tapping it shows the roll, your modifier and the target number
 before he narrates what it cost you. He still rolls monster attacks and damage
 himself — only your own attempts are yours to roll.
+
+**Checks pay XP**, more for a hard one and something even on a failure, so
+progression follows the risks you actually take. That's deliberately the engine's
+job rather than the DM's: two different models each narrated a whole session —
+quests, fights, disasters — without ever awarding a single point, so nobody could
+level.
 
 In a group, everyone who has run `/join` can act. If you're talking to another
 player rather than to Keith, @mention them and he'll stay out of it.

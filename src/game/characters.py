@@ -55,6 +55,27 @@ def max_hp_for(level: int, con_score: int) -> int:
     return max(1, 10 + con_mod * 2 + (level - 1) * (5 + con_mod))
 
 
+#: XP per point of DC when a check succeeds, and when it fails. Failure still pays
+#: something -- a snapped lockpick teaches you as much as an opened door, and a run
+#: of bad luck shouldn't stall progression entirely.
+XP_PER_DC_SUCCESS = 4
+XP_PER_DC_FAILURE = 2
+
+
+def xp_for_check(dc: int, success: bool) -> int:
+    """XP for attempting a check of difficulty `dc`.
+
+    The engine awards this, rather than leaving it to the DM. Two different models
+    both narrated whole sessions -- quests, fights, failures -- without ever calling
+    grant_xp, so nobody could level. Tying the award to a resolved check keeps the
+    pacing tied to real obstacles instead of a timer, and it can't be forgotten.
+
+    A DC 15 check pays 60 on success, 30 on failure; 300 XP reaches level 2.
+    """
+    rate = XP_PER_DC_SUCCESS if success else XP_PER_DC_FAILURE
+    return max(1, dc * rate)
+
+
 def clamp_ability(score: int) -> int:
     return max(MIN_ABILITY, min(MAX_ABILITY, score))
 

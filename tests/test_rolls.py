@@ -404,3 +404,90 @@ async def test_the_button_carries_the_roll_id_back(
     text = message.reply_text.await_args.args[0]
     assert "Thorn" in text and "DEX" in text and "DC 12" in text and "the ledge" in text
     assert message.reply_text.await_args.kwargs["reply_markup"] is not None
+
+
+# -- XP from checks ---------------------------------------------------------
+
+
+async def test_resolving_a_check_awards_xp(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock
+) -> None:
+    """The engine pays for checks, because two different models never did."""
+    from src.game.characters import xp_for_check
+
+    await repo.update_campaign(campaign.id, status="active")
+    pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 15, "the ledge")
+
+    update = tap(pending.id, hero.user_id)
+    await handle_roll(update, context)
+
+    character = await repo.get_character_by_id(hero.id)
+    assert character is not None
+    total = await repo.conn.execute("SELECT total FROM dice_rolls")
+    row = await total.fetchone()
+    assert row is not None
+
+    expected = xp_for_check(15, row["total"] >= 15)
+    assert character.xp == expected
+    assert expected > 0
+
+    # The player is told, and so is Keith.
+    assert f"+{expected} XP" in update.callback_query.edit_message_text.await_args.args[0]
+
+
+async def test_failing_a_check_still_pays_something(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock
+) -> None:
+    """A run of bad luck shouldn't stall progression completely."""
+    from src.game.characters import XP_PER_DC_FAILURE, XP_PER_DC_SUCCESS, xp_for_check
+
+    assert xp_for_check(15, success=False) == 15 * XP_PER_DC_FAILURE
+    assert xp_for_check(15, success=True) == 15 * XP_PER_DC_SUCCESS
+    assert xp_for_check(15, success=False) < xp_for_check(15, success=True)
+    # Harder checks pay more.
+    assert xp_for_check(20, success=True) > xp_for_check(10, success=True)
+
+
+async def test_enough_checks_produce_a_level_up(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock
+) -> None:
+    """The whole point: progression that actually happens.
+
+    Ten DC 15 checks pay at least 300 XP even if every one of them fails, so this
+    doesn't depend on how the dice land.
+    """
+    from src.game.characters import XP_THRESHOLDS, xp_for_check
+
+    checks = 10
+    assert checks * xp_for_check(15, success=False) >= XP_THRESHOLDS[1]
+
+    await repo.update_campaign(campaign.id, status="active")
+    for _ in range(checks):
+        pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 15, "another ledge")
+        await handle_roll(tap(pending.id, hero.user_id), context)
+
+    character = await repo.get_character_by_id(hero.id)
+    assert character is not None
+    assert character.level >= 2
+    assert character.max_hp > hero.max_hp
+
+
+async def test_a_failed_xp_award_still_narrates_the_roll(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock, monkeypatch
+) -> None:
+    """The roll is claimed and logged before XP; losing the award mustn't also lose
+    the narration and leave the player with nothing."""
+    await repo.update_campaign(campaign.id, status="active")
+    pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 12, "the ledge")
+
+    async def boom(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(repo, "grant_xp", boom)
+
+    update = tap(pending.id, hero.user_id)
+    await handle_roll(update, context)
+
+    update.effective_message.reply_text.assert_awaited()
+    shown = update.callback_query.edit_message_text.await_args.args[0]
+    assert "XP" not in shown  # no award to report

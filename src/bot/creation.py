@@ -23,7 +23,7 @@ from telegram.ext import (
 
 from src.bot.context import get_repo, get_service, reply, send_preformatted, user_state
 from src.game.characters import assign_standard_array, roll_abilities
-from src.game.genres import Genre, get_genre
+from src.game.genres import DEFAULT_GENRE, Genre, genre_for
 from src.game.memory import render_character
 from src.log import get_logger
 
@@ -64,9 +64,8 @@ async def start_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return ConversationHandler.END
 
-    genre = get_genre(campaign.genre)
+    genre = genre_for(campaign)
     user_state(context)["campaign_id"] = campaign.id
-    user_state(context)["genre_key"] = genre.key
 
     blurbs = "\n".join(f"*{a.name}* — {a.blurb}" for a in genre.archetypes)
     await update.message.reply_text(
@@ -86,7 +85,7 @@ async def choose_archetype(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     archetype = (query.data or "").removeprefix(ARCHETYPE_PREFIX)
     user_state(context)["archetype"] = archetype
 
-    genre = _genre_from(context)
+    genre = await _genre_from(context)
     blurbs = "\n".join(f"*{o.name}* — {o.blurb}" for o in genre.origins)
     await query.edit_message_text(
         f"A {archetype}. Predictable, but fine.\n\nWhere are you from?\n\n{blurbs}",
@@ -138,7 +137,7 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return NAMING
 
-    genre = _genre_from(context)
+    genre = await _genre_from(context)
     archetype_name = user_state(context).get("archetype", "")
     archetype = genre.find_archetype(archetype_name)
     abilities = (
@@ -205,8 +204,15 @@ async def cancel_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return ConversationHandler.END
 
 
-def _genre_from(context: ContextTypes.DEFAULT_TYPE) -> Genre:
-    return get_genre(str(user_state(context).get("genre_key", "fantasy")))
+async def _genre_from(context: ContextTypes.DEFAULT_TYPE) -> Genre:
+    """The campaign's genre, re-read rather than rebuilt from a stored key.
+
+    A generated genre only exists on the campaign row, so looking it up by key
+    would silently hand back fantasy instead.
+    """
+    campaign_id = user_state(context).get("campaign_id")
+    campaign = await get_repo(context).get_campaign(campaign_id) if campaign_id else None
+    return genre_for(campaign) if campaign else DEFAULT_GENRE
 
 
 def _display_name(user: Any) -> str:

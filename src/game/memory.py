@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.game.characters import ABILITY_KEYS, ability_modifier, xp_to_next_level
-from src.game.genres import Genre, get_genre
+from src.game.genres import Genre, genre_for
 from src.storage.repo import Campaign, Character, Message, Repo, StoryEvent
 
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
@@ -137,11 +137,10 @@ XP_GRACE_MESSAGES = 8
 def render_progression(party: list[Character], messages_so_far: int) -> str:
     """A nudge, shown only when someone has been adventuring without ever earning XP.
 
-    In real play Keith rolled dice and recorded events reliably but never once called
-    grant_xp, so nobody could ever level. This names the characters it has happened
-    to -- and disappears as soon as it stops being true, so it can't turn into
-    standing pressure to award XP every single turn. Current XP is already on each
-    character's sheet in the party block.
+    XP now comes from resolved checks, so a character stuck on zero means they have
+    never been asked to roll for anything -- which is a pacing problem, not a
+    bookkeeping one. The nudge disappears the moment it stops being true, so it
+    can't become standing pressure. Current XP is on each sheet in the party block.
     """
     if messages_so_far < XP_GRACE_MESSAGES:
         return ""
@@ -152,9 +151,9 @@ def render_progression(party: list[Character], messages_so_far: int) -> str:
 
     names = ", ".join(c.name for c in stalled)
     return (
-        f"{names} — still on 0 XP after {messages_so_far} messages of adventuring. "
-        "If they have overcome anything at all, award it with grant_xp; otherwise "
-        "they can never level up."
+        f"{names} — still on 0 XP after {messages_so_far} messages, which means nothing "
+        "they've attempted has been put to a roll. Look for the next thing with real "
+        "stakes and call request_roll on it."
     )
 
 
@@ -166,7 +165,7 @@ async def build_turn_context(
     event_limit: int = EVENT_LIMIT,
 ) -> str:
     """Everything the DM needs to know before reading the player's latest action."""
-    genre = get_genre(campaign.genre)
+    genre = genre_for(campaign)
     party = await repo.list_party(campaign.id)
     events = await repo.recent_events(campaign.id, limit=event_limit)
     messages = await repo.recent_messages(campaign.id, limit=transcript_limit)

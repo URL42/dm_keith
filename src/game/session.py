@@ -17,7 +17,7 @@ from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
-from src.game.genres import get_genre
+from src.game.genres import genre_for
 from src.game.memory import build_instructions, build_turn_context, build_user_prompt
 from src.llm.dm_agent import GameDeps, dm_agent
 from src.llm.models import build_model
@@ -102,6 +102,15 @@ class GameService:
         #: chats still run concurrently.
         self._locks: dict[int, asyncio.Lock] = {}
 
+    @property
+    def model(self) -> Model:
+        """The configured model, for one-off calls outside the turn loop."""
+        return self._model
+
+    @property
+    def settings(self) -> ModelSettings | None:
+        return self._settings
+
     def lock_for(self, campaign_id: int) -> asyncio.Lock:
         return self._locks.setdefault(campaign_id, asyncio.Lock())
 
@@ -115,7 +124,7 @@ class GameService:
     ) -> TurnResult:
         """Run one exchange: the player acts, Keith responds, both are recorded."""
         async with self.lock_for(campaign.id):
-            genre = get_genre(campaign.genre)
+            genre = genre_for(campaign)
 
             # Re-read the campaign: this turn may have been queued behind another
             # one, or behind /endgame.

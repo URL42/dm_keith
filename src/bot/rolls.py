@@ -20,6 +20,7 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from src.bot.context import get_repo, get_service, reply
+from src.game.characters import xp_for_check
 from src.game.dice import DiceInstruction, roll_instruction
 from src.log import get_logger
 from src.storage.repo import Character, PendingRoll
@@ -112,6 +113,29 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         source="player",
         reason=pending.reason,
     )
+
+    # Progression is the engine's job, not the DM's. Two models in a row narrated
+    # entire sessions without ever awarding XP; a resolved check is a real obstacle
+    # and a reliable place to pay for it.
+    success = result.total >= pending.dc
+    awarded = xp_for_check(pending.dc, success)
+    levelled = False
+    try:
+        character, levelled = await repo.grant_xp(character.id, awarded)
+        log.info(
+            "xp %s +%s for DC %s check (%s) -> %s total%s",
+            character.name,
+            awarded,
+            pending.dc,
+            "success" if success else "failure",
+            character.xp,
+            ", LEVEL UP" if levelled else "",
+        )
+    except Exception:
+        # The roll is already claimed and logged. Losing the XP is a shame; losing
+        # the narration as well would leave the player with nothing at all.
+        log.exception("couldn't award XP to %s", character.name)
+        awarded = 0
     log.info(
         "player roll %s %s -> %s vs DC %s (%s)",
         character.name,
@@ -124,9 +148,13 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Replace the button with the result so it can't be tapped again and the numbers
     # stay in the history. Presentation only -- if it fails, the turn must still run,
     # otherwise the roll is consumed and nobody ever hears what happened.
+    reward = f"  <i>+{awarded} XP</i>" if awarded else ""
+    if levelled:
+        reward += f"  🎉 <b>LEVEL {character.level}</b>"
     try:
         await query.edit_message_text(
-            f"{describe_check(pending, character)}\n\n{html.escape(arithmetic)} — <b>{verdict}</b>",
+            f"{describe_check(pending, character)}\n\n"
+            f"{html.escape(arithmetic)} — <b>{verdict}</b>{reward}",
             parse_mode=ParseMode.HTML,
         )
     except TelegramError:
@@ -143,7 +171,19 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     outcome = (
         f"{character.name} rolled {result.total} against DC {pending.dc} "
         f"({pending.ability.upper()} check: {pending.reason or 'no reason given'}) — {verdict}. "
-        "Narrate what happens as a result."
+        + (
+            f"They earned {awarded} XP for the attempt (already awarded — don't call "
+            "grant_xp for this roll). "
+            if awarded
+            else ""
+        )
+        + (
+            f"They have just reached LEVEL {character.level}, max HP {character.max_hp} — "
+            "announce it with appropriate drama. "
+            if levelled
+            else ""
+        )
+        + "Narrate what happens as a result."
     )
     service = get_service(context)
     await reply(update, context, service, campaign, action=outcome, actor=character)

@@ -121,6 +121,9 @@ async def test_the_xp_nudge_appears_only_when_progression_has_stalled(
     await service.take_turn(campaign, "still going", hero)
     assert "still on 0 XP" in seen[1]
     assert "Thorn" in seen[1]
+    # XP comes from checks now, so the nudge points at rolling, not at grant_xp.
+    assert "request_roll" in seen[1]
+    assert "grant_xp" not in seen[1]
 
     # Once XP flows, the nudge disappears rather than nagging for more.
     await repo.grant_xp(hero.id, 50)
@@ -226,3 +229,37 @@ def test_anthropic_settings_only_apply_to_anthropic() -> None:
 
     for spec in ("openai:gpt-5", "deepseek:deepseek-chat", "ollama:qwen3:14b"):
         assert anthropic_settings(spec, "medium") is None
+
+
+def test_a_stored_genre_survives_a_new_field_on_starting_item() -> None:
+    """Skins are read for the life of a campaign, so a row written by an older
+    version has to keep working -- otherwise adding a field would re-skin every
+    live custom campaign back to fantasy mid-play."""
+    import json
+
+    from src.game.genres import FANTASY, genre_from_dict, genre_to_dict
+
+    raw = json.loads(json.dumps(genre_to_dict(FANTASY)))
+    assert genre_from_dict(raw) == FANTASY
+
+    for archetype in raw["archetypes"]:
+        for item in archetype["starting_items"]:
+            item["weight_in_stones"] = 3  # a field this version doesn't know
+
+    restored = genre_from_dict(raw)
+    assert restored.archetypes[0].starting_items[0].name == "Worn longsword"
+
+
+def test_a_stored_genre_with_a_duplicated_priority_is_repaired() -> None:
+    """assign_standard_array indexes positionally and would run off the end."""
+    import json
+
+    from src.game.characters import ABILITY_KEYS, assign_standard_array
+    from src.game.genres import FANTASY, genre_from_dict, genre_to_dict
+
+    raw = json.loads(json.dumps(genre_to_dict(FANTASY)))
+    raw["archetypes"][0]["priority"] = ["dex", "dex", "dex"]
+
+    priority = genre_from_dict(raw).archetypes[0].priority
+    assert sorted(priority) == sorted(ABILITY_KEYS)
+    assert assign_standard_array(priority)["dex"] == 15

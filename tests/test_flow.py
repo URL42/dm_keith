@@ -11,7 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from src.bot.commands import (
@@ -45,6 +45,48 @@ USER_ID = 7
 def narrating_model(reply: str = "The tavern door bangs shut behind you.") -> FunctionModel:
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         return ModelResponse(parts=[TextPart(reply)])
+
+    return FunctionModel(respond)
+
+
+def genre_model() -> FunctionModel:
+    """Answers the genre builder's structured-output call with a cyberpunk setting."""
+    skin = {
+        "label": "Cyberpunk",
+        "emoji": "🌃",
+        "pitch": "Neon, bad decisions and worse landlords.",
+        "tone_note": "Rain-slick and sardonic.",
+        "ability_names": {
+            "str": "Muscle",
+            "dex": "Reflex",
+            "con": "Endurance",
+            "int": "Tech",
+            "wis": "Instinct",
+            "cha": "Cool",
+        },
+        "archetypes": [
+            {
+                "name": name,
+                "blurb": f"A {name}.",
+                "priority": ["int", "dex", "cha", "con", "wis", "str"],
+                "items": [
+                    {"name": f"{name} deck", "kind": "tool", "description": "Warm to the touch."},
+                    {"name": "Burner phone", "kind": "gear", "description": "Third this month."},
+                    {"name": "Instant noodles", "kind": "supply", "description": "Dinner."},
+                ],
+            }
+            for name in ("Netrunner", "Solo", "Fixer", "Techie", "Face")
+        ],
+        "origins": [
+            {"name": name, "blurb": f"From the {name}."}
+            for name in ("Sprawl", "Arcology", "Orbital", "Badlands", "Undercity")
+        ],
+    }
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        # Structured output arrives as a call to the output tool.
+        tool = info.output_tools[0]
+        return ModelResponse(parts=[ToolCallPart(tool.name, skin)])
 
     return FunctionModel(respond)
 
@@ -335,18 +377,63 @@ async def test_a_model_failure_is_reported_not_narrated(repo: Repo, context: Mag
     assert "Nothing happened" in said
 
 
-async def test_typing_instead_of_tapping_a_genre_gets_an_answer(
-    repo: Repo, context: MagicMock
-) -> None:
-    """Used to vanish silently: /newgame doesn't create the campaign, so a typed
-    reply hit the 'no campaign here, stay quiet' path."""
-    await handle_newgame(message_update(), context)
+async def test_typing_a_genre_builds_it(repo: Repo, context: MagicMock) -> None:
+    """Used to vanish silently. Now it generates the setting and opens the campaign."""
+    from src.game.genres import genre_for
+    from src.llm import genre_builder
 
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=genre_model()
+    )
+
+    await handle_newgame(message_update(), context)
     typed = message_update("cyberpunk")
     await handle_play(typed, context)
 
-    typed.message.reply_text.assert_awaited_once()
-    assert "Pick a genre" in typed.message.reply_text.await_args.args[0]
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    assert campaign.genre == genre_builder.genre_key_for("cyberpunk")
+
+    # The generated setting is stored on the campaign, so it survives a restart.
+    genre = genre_for(campaign)
+    assert genre.label == "Cyberpunk"
+    assert [a.name for a in genre.archetypes] == ["Netrunner", "Solo", "Fixer", "Techie", "Face"]
+    assert genre.ability_label("int") == "Tech"
+
+
+async def test_a_generated_genre_drives_character_creation(repo: Repo, context: MagicMock) -> None:
+    """The archetypes offered at /join must come from the generated setting."""
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=genre_model()
+    )
+    await handle_newgame(message_update(), context)
+    await handle_play(message_update("cyberpunk"), context)
+
+    joining = message_update()
+    await start_join(joining, context)
+
+    offered = joining.message.reply_text.await_args.args[0]
+    assert "Netrunner" in offered
+    assert "Fighter" not in offered  # not the fantasy fallback
+
+
+async def test_a_failed_generation_says_so_rather_than_hanging(
+    repo: Repo, context: MagicMock
+) -> None:
+    def exploding(messages: Any, info: Any) -> Any:
+        raise RuntimeError("model is down")
+
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=FunctionModel(exploding)
+    )
+
+    await handle_newgame(message_update(), context)
+    typed = message_update("cyberpunk")
+    await handle_play(typed, context)
+
+    notice = typed.message.reply_text.return_value
+    assert "couldn't make that into a setting" in notice.edit_text.await_args.args[0]
+    assert await repo.get_live_campaign(CHAT_ID) is None
 
 
 async def test_the_genre_menu_lists_full_descriptions(repo: Repo, context: MagicMock) -> None:
@@ -359,3 +446,74 @@ async def test_the_genre_menu_lists_full_descriptions(repo: Repo, context: Magic
     button = genre_keyboard().inline_keyboard[0][0]
     assert button.text == "🗡 Fantasy"
     assert len(button.text) < 24  # short enough not to be truncated
+
+
+async def test_formatting_characters_in_a_typed_genre_dont_break_it(
+    repo: Repo, context: MagicMock
+) -> None:
+    """An underscore in "80s_action" made Telegram reject the message outright,
+    so the campaign was never created."""
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=genre_model()
+    )
+    await handle_newgame(message_update(), context)
+
+    typed = message_update("80s_action *movie* `weird`")
+    await handle_play(typed, context)
+
+    # Plain text, so nothing to misparse.
+    notice_call = typed.message.reply_text.await_args
+    assert notice_call.kwargs.get("parse_mode") is None
+    assert await repo.get_live_campaign(CHAT_ID) is not None
+
+
+async def test_a_broken_notice_edit_still_leaves_the_campaign_usable(
+    repo: Repo, context: MagicMock
+) -> None:
+    """The edit is presentation; the campaign is already created by then."""
+    from telegram.error import BadRequest
+
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=genre_model()
+    )
+    await handle_newgame(message_update(), context)
+
+    typed = message_update("cyberpunk")
+    typed.message.reply_text.return_value.edit_text = AsyncMock(
+        side_effect=BadRequest("can't parse entities")
+    )
+    await handle_play(typed, context)
+
+    assert await repo.get_live_campaign(CHAT_ID) is not None
+
+
+async def test_typing_a_built_in_genre_uses_the_hand_written_one(
+    repo: Repo, context: MagicMock
+) -> None:
+    """No point spending a model call on a worse copy of Fantasy."""
+    await handle_newgame(message_update(), context)
+    await handle_play(message_update("Fantasy"), context)
+
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    assert campaign.genre == "fantasy"
+    assert campaign.genre_skin == {}  # not generated
+
+
+async def test_an_abandoned_genre_menu_does_not_swallow_later_chatter(
+    repo: Repo, context: MagicMock
+) -> None:
+    """Left armed, the flag turned the next stray "lol" into a generated campaign."""
+    context.application.bot_data[SERVICE_KEY] = GameService(
+        repo, "test:function", model=genre_model()
+    )
+    await handle_newgame(message_update(), context)
+    await handle_play(message_update("cyberpunk"), context)
+
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+
+    # A second stray message must not build anything or replace the campaign.
+    await handle_play(message_update("lol"), context)
+    still = await repo.get_live_campaign(CHAT_ID)
+    assert still is not None and still.id == campaign.id

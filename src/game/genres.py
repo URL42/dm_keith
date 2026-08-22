@@ -7,9 +7,13 @@ so a campaign can be re-skinned without touching a single stored score.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
+from typing import Any
 
 from src.game.characters import ABILITY_KEYS
+from src.log import get_logger
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -198,8 +202,76 @@ DEFAULT_GENRE = FANTASY
 
 
 def get_genre(key: str) -> Genre:
-    """Look up a genre, falling back to fantasy for anything unrecognised."""
+    """Look up a built-in genre, falling back to fantasy for anything unrecognised."""
     return GENRES.get(key.lower(), DEFAULT_GENRE)
+
+
+def genre_to_dict(genre: Genre) -> dict[str, Any]:
+    """Serialise a genre for storage on the campaign row."""
+    return asdict(genre) | {"key": genre.key}
+
+
+def _priority(raw: Any) -> tuple[str, ...]:
+    """A complete, de-duplicated ability order.
+
+    `assign_standard_array` walks this positionally, so a stored list with a
+    repeat would run off the end of the array and crash /join.
+    """
+    ordered: list[str] = []
+    for ability in raw or ():
+        key = str(ability).lower()
+        if key in ABILITY_KEYS and key not in ordered:
+            ordered.append(key)
+    ordered += [a for a in ABILITY_KEYS if a not in ordered]
+    return tuple(ordered)
+
+
+def _starting_item(raw: dict[str, Any]) -> StartingItem:
+    """Build an item from stored JSON, ignoring fields we no longer know about.
+
+    Skins are written once and read for the life of a campaign, so a row written by
+    an older version has to keep working -- otherwise adding a field here would
+    re-skin every live custom campaign back to fantasy mid-play.
+    """
+    known = {f.name for f in fields(StartingItem)}
+    return StartingItem(**{k: v for k, v in raw.items() if k in known})
+
+
+def genre_from_dict(raw: dict[str, Any]) -> Genre:
+    """Rebuild a stored genre. Raises KeyError/TypeError on anything malformed."""
+    return Genre(
+        key=raw["key"],
+        label=raw["label"],
+        emoji=raw.get("emoji", "🎲"),
+        pitch=raw.get("pitch", ""),
+        ability_names=dict(raw["ability_names"]),
+        archetypes=tuple(
+            Archetype(
+                name=a["name"],
+                blurb=a.get("blurb", ""),
+                priority=_priority(a.get("priority", ABILITY_KEYS)),
+                starting_items=tuple(_starting_item(i) for i in a.get("starting_items", ())),
+            )
+            for a in raw["archetypes"]
+        ),
+        origins=tuple(Origin(name=o["name"], blurb=o.get("blurb", "")) for o in raw["origins"]),
+        tone_note=raw.get("tone_note", ""),
+    )
+
+
+def genre_for(campaign: Any) -> Genre:
+    """The genre a campaign is actually being played in.
+
+    Generated genres live on the campaign row, so a campaign keeps the setting it
+    was created with even though it isn't in the built-in table.
+    """
+    skin = getattr(campaign, "genre_skin", None)
+    if skin:
+        try:
+            return genre_from_dict(skin)
+        except (KeyError, TypeError, ValueError):
+            log.warning("campaign %s has an unreadable genre skin; falling back", campaign.id)
+    return get_genre(campaign.genre)
 
 
 def render_ability_block(genre: Genre, scores: dict[str, int], modifiers: dict[str, int]) -> str:
