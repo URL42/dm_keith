@@ -42,6 +42,17 @@ button appears, and tapping it shows the roll, your modifier and the target numb
 before he narrates what it cost you. He still rolls monster attacks and damage
 himself — only your own attempts are yours to roll.
 
+**Characters outlive campaigns.** `/export` sends you a Markdown character sheet —
+readable, printable, with the exact data in a JSON block at the end. Upload it into
+any other campaign and that character walks in with their level, XP, gear and
+achievements intact, picking a new archetype to suit the setting. Abilities need no
+conversion at all: they're stored under canonical keys and only *displayed* under a
+genre's names, so a Fantasy character's Strength 16 is a cyberpunk character's
+Muscle 16.
+
+The sheet is yours to edit. The bot will notice, import it anyway, and have
+something to say about it.
+
 **Checks pay XP**, more for a hard one and something even on a failure, so
 progression follows the risks you actually take. That's deliberately the engine's
 job rather than the DM's: two different models each narrated a whole session —

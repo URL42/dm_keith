@@ -21,10 +21,13 @@ from telegram.ext import (
     filters,
 )
 
+from src.achievements.runtime import award_from_pool, load_registry
 from src.bot.context import get_repo, get_service, reply, send_preformatted, user_state
+from src.bot.sheets import IMPORT_KEY, read_uploaded_sheet
 from src.game.characters import assign_standard_array, roll_abilities
 from src.game.genres import DEFAULT_GENRE, Genre, genre_for
 from src.game.memory import render_character
+from src.game.sheets import ImportedCharacter
 from src.log import get_logger
 
 log = get_logger(__name__)
@@ -104,11 +107,136 @@ async def choose_origin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     origin = (query.data or "").removeprefix(ORIGIN_PREFIX)
     user_state(context)["origin"] = origin
 
+    # An imported character already has a name and a history; they only needed
+    # re-fitting to this setting, so creation ends here.
+    if user_state(context).get(IMPORT_KEY) is not None:
+        await query.edit_message_text(f"{origin} {user_state(context).get('archetype', '')}.")
+        return await finish_import(update, context)
+
     await query.edit_message_text(
         f"{origin} {user_state(context).get('archetype', '')}. Good.\n\n"
         "What's your name? Send it as a message — add a line about who you are if you like.",
     )
     return NAMING
+
+
+async def start_import(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Somebody uploaded a character sheet. Re-fit them to this setting."""
+    imported = await read_uploaded_sheet(update, context)
+    if imported is None or update.effective_message is None:
+        return ConversationHandler.END
+
+    chat = update.effective_chat
+    if chat is None:
+        return ConversationHandler.END
+
+    campaign = await get_repo(context).get_live_campaign(chat.id)
+    if campaign is None:
+        return ConversationHandler.END
+
+    genre = genre_for(campaign)
+    user_state(context)["campaign_id"] = campaign.id
+
+    blurbs = "\n".join(f"*{a.name}* — {a.blurb}" for a in genre.archetypes)
+    await update.effective_message.reply_text(
+        f"They keep their levels, their scars and their pockets. What are they *here*?\n\n{blurbs}",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_keyboard(ARCHETYPE_PREFIX, [(a.name, a.name) for a in genre.archetypes]),
+    )
+    return CHOOSING_ARCHETYPE
+
+
+async def finish_import(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Create the imported character, carrying everything but their old class."""
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or message is None:
+        return ConversationHandler.END
+
+    state = user_state(context)
+    imported: ImportedCharacter | None = state.get(IMPORT_KEY)
+    repo = get_repo(context)
+    campaign = await repo.get_campaign(state.get("campaign_id", 0))
+    if imported is None or campaign is None or campaign.status == "ended":
+        await message.reply_text("That campaign is gone. Start again with /newgame.")
+        state.clear()
+        return ConversationHandler.END
+
+    genre = genre_for(campaign)
+    character = await repo.create_character(
+        campaign.id,
+        user_id=user.id,
+        name=imported.name,
+        user_display=_display_name(user),
+        archetype=state.get("archetype", ""),
+        origin=state.get("origin", ""),
+        concept=imported.concept,
+        abilities=imported.abilities,
+    )
+
+    # XP first: it sets the level, which sets max HP, which the heal below fills.
+    if imported.xp:
+        await repo.grant_xp(character.id, imported.xp)
+    for item in imported.items:
+        stored = await repo.add_item(
+            character.id,
+            item.name,
+            kind=item.kind,
+            description=item.description,
+            quantity=item.quantity,
+            equippable=item.equippable,
+            consumable=item.consumable,
+            stat_mods=item.stat_mods,
+        )
+        if item.equipped:
+            await repo.set_equipped(character.id, stored.name, True)
+    for achievement_id in imported.achievements:
+        entry = load_registry().get(achievement_id)
+        if entry is not None:
+            await repo.grant_achievement(campaign.id, character.id, entry.id, entry.rarity)
+
+    # A new adventure starts rested.
+    refreshed = await repo.get_character_by_id(character.id)
+    if refreshed is not None:
+        await repo.apply_damage(refreshed.id, refreshed.max_hp)
+
+    state.clear()
+
+    shame = None
+    if imported.edited:
+        # They asked for this to be noticed. Loudly.
+        log.info("imported sheet for %s failed its checksum", imported.name)
+        shame = await award_from_pool(repo, campaign, character, "shame")
+
+    final = await repo.get_character_by_id(character.id) or character
+    await send_preformatted(message, render_character(final, genre, include_player=True))
+    if shame:
+        await message.reply_text(shame)
+
+    if campaign.status == "active":
+        service = get_service(context)
+        await reply(
+            update,
+            context,
+            service,
+            campaign,
+            action=(
+                f"{final.name}, a level {final.level} {final.origin} {final.archetype}, "
+                "arrives in the current scene — a veteran of another campaign entirely. "
+                + (
+                    "Their paperwork has been tampered with and they have just been "
+                    "publicly shamed for it; be merciless about that. "
+                    if shame
+                    else ""
+                )
+                + "Introduce them in a sentence or two."
+            ),
+            actor=None,
+        )
+    else:
+        await message.reply_text("Ready. /begin when the party's assembled.")
+
+    return ConversationHandler.END
 
 
 async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -224,7 +352,11 @@ def _display_name(user: Any) -> str:
 def build_join_handler() -> ConversationHandler:
     """The /join flow, scoped to one user in one chat."""
     return ConversationHandler(
-        entry_points=[CommandHandler("join", start_join)],
+        entry_points=[
+            CommandHandler("join", start_join),
+            # Uploading a sheet is the other way into character creation.
+            MessageHandler(filters.Document.FileExtension("md"), start_import),
+        ],
         states={
             CHOOSING_ARCHETYPE: [
                 CallbackQueryHandler(choose_archetype, pattern=f"^{ARCHETYPE_PREFIX}")

@@ -517,3 +517,140 @@ async def test_an_abandoned_genre_menu_does_not_swallow_later_chatter(
     await handle_play(message_update("lol"), context)
     still = await repo.get_live_campaign(CHAT_ID)
     assert still is not None and still.id == campaign.id
+
+
+# -- carrying a character between campaigns ---------------------------------
+
+
+def upload(text: str, filename: str = "thorn.md", user_id: int = USER_ID) -> MagicMock:
+    """An update carrying an uploaded .md sheet."""
+    update = message_update()
+    update.effective_user.id = user_id
+    update.message.text = None
+    update.message.document.file_size = len(text.encode())
+    handle = AsyncMock()
+    handle.download_as_bytearray = AsyncMock(return_value=bytearray(text.encode()))
+    update.message.document.get_file = AsyncMock(return_value=handle)
+    update.message.document.file_name = filename
+    return update
+
+
+async def _exported_sheet(repo: Repo, context: MagicMock) -> str:
+    """Play a fantasy campaign, level up a bit, then /export."""
+    from src.bot.sheets import handle_export
+
+    await _play_through(context)
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    character = await repo.get_character(campaign.id, USER_ID)
+    assert character is not None
+    await repo.grant_xp(character.id, 950)
+
+    exporting = message_update()
+    exporting.message.reply_document = AsyncMock()
+    await handle_export(exporting, context)
+
+    sent = exporting.message.reply_document.await_args.kwargs["document"]
+    return sent.getvalue().decode()
+
+
+async def test_a_character_survives_into_a_new_campaign(repo: Repo, context: MagicMock) -> None:
+    from src.bot.creation import start_import
+
+    sheet = await _exported_sheet(repo, context)
+    assert "# Bramble" in sheet
+
+    # A brand new campaign in a different genre.
+    await handle_endgame(message_update(), context)
+    await handle_newgame(message_update(), context)
+    await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
+
+    context.user_data = {}
+    await start_import(upload(sheet), context)
+    await choose_archetype(callback_update(f"{ARCHETYPE_PREFIX}Wizard"), context)
+    await choose_origin(callback_update(f"{ORIGIN_PREFIX}Elf"), context)
+
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    carried = await repo.get_character(campaign.id, USER_ID)
+    assert carried is not None
+
+    # Everything that should have come with them:
+    assert carried.name == "Bramble"
+    assert carried.xp == 950
+    assert carried.level == 3
+    assert carried.abilities["str"] == 15
+    assert {i.name for i in carried.items} >= {"Worn longsword", "Rations"}
+    # ...and the new setting's answer to "what are you here".
+    assert carried.archetype == "Wizard"
+    assert carried.origin == "Elf"
+    # A new adventure starts rested.
+    assert carried.hp == carried.max_hp
+
+
+async def test_an_edited_sheet_gets_publicly_shamed(repo: Repo, context: MagicMock) -> None:
+    from src.bot.creation import start_import
+
+    sheet = (await _exported_sheet(repo, context)).replace('"xp": 950', '"xp": 63000')
+
+    await handle_endgame(message_update(), context)
+    await handle_newgame(message_update(), context)
+    await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
+
+    context.user_data = {}
+    await start_import(upload(sheet), context)
+    await choose_archetype(callback_update(f"{ARCHETYPE_PREFIX}Fighter"), context)
+
+    # Creation finishes on the origin tap, so that's where the shaming lands.
+    finishing = callback_update(f"{ORIGIN_PREFIX}Human")
+    await choose_origin(finishing, context)
+
+    said = [c.args[0] for c in finishing.message.reply_text.await_args_list if c.args]
+    assert any("ACHIEVEMENT UNLOCKED" in s for s in said)
+
+    # It still imported -- it's their game, they just don't get away with it quietly.
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    carried = await repo.get_character(campaign.id, USER_ID)
+    assert carried is not None and carried.xp == 63000
+
+    earned = {aid for aid, _ in await repo.list_achievements(carried.id)}
+    shame = {
+        "creative-accounting",
+        "notarised-by-nobody",
+        "audited",
+        "self-made-hero",
+        "checksum-says-no",
+        "welcome-back-allegedly",
+    }
+    assert earned & shame
+
+
+async def test_rubbish_uploads_are_turned_away(repo: Repo, context: MagicMock) -> None:
+    from src.bot.creation import start_import
+
+    await _play_through(context)
+    await handle_endgame(message_update(), context)
+    await handle_newgame(message_update(), context)
+    await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
+
+    context.user_data = {}
+    bad = upload("this is just a shopping list")
+    await start_import(bad, context)
+
+    assert "can't find the character data" in bad.message.reply_text.await_args.args[0]
+    campaign = await repo.get_live_campaign(CHAT_ID)
+    assert campaign is not None
+    assert await repo.get_character(campaign.id, USER_ID) is None
+
+
+async def test_you_cannot_import_on_top_of_yourself(repo: Repo, context: MagicMock) -> None:
+    from src.bot.creation import start_import
+
+    sheet = await _exported_sheet(repo, context)  # leaves Bramble in a live campaign
+
+    context.user_data = {}
+    again = upload(sheet)
+    await start_import(again, context)
+
+    assert "already playing someone" in again.message.reply_text.await_args.args[0]

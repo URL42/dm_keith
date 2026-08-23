@@ -5,8 +5,12 @@
     "description": "You put your fate in the hands of a small plastic solid. It begins.",
     "reward": "A lifelong and entirely justified suspicion of twenty-sided objects.",
     "rarity": "common",
-    "tags": ["dice", "milestone"],
-    "trigger": "first_check"
+    "tags": [
+      "dice",
+      "milestone"
+    ],
+    "trigger": "first_check",
+    "awarded_by": "engine"
   },
   {
     "id": "natural-twenty",
@@ -14,8 +18,12 @@
     "description": "The die came up twenty. You will bring this up for years.",
     "reward": "One (1) anecdote, to be retold at increasing volume.",
     "rarity": "uncommon",
-    "tags": ["dice", "triumph"],
-    "trigger": "natural_20"
+    "tags": [
+      "dice",
+      "triumph"
+    ],
+    "trigger": "natural_20",
+    "awarded_by": "engine"
   },
   {
     "id": "natural-one",
@@ -23,8 +31,12 @@
     "description": "The die came up one. Nobody blames you. Everybody blames you.",
     "reward": "+1 Sympathy. Non-transferable, non-refundable.",
     "rarity": "uncommon",
-    "tags": ["dice", "disaster"],
-    "trigger": "natural_1"
+    "tags": [
+      "dice",
+      "disaster"
+    ],
+    "trigger": "natural_1",
+    "awarded_by": "engine"
   },
   {
     "id": "ascending",
@@ -32,8 +44,12 @@
     "description": "You survived enough poor decisions to get measurably better at them.",
     "reward": "A larger pool of hit points to lose dramatically.",
     "rarity": "uncommon",
-    "tags": ["progression", "milestone"],
-    "trigger": "level_up"
+    "tags": [
+      "progression",
+      "milestone"
+    ],
+    "trigger": "level_up",
+    "awarded_by": "engine"
   },
   {
     "id": "horizontal",
@@ -41,8 +57,12 @@
     "description": "You reached zero hit points and learned this flagstone's opinion of you.",
     "reward": "An intimate familiarity with the floor.",
     "rarity": "rare",
-    "tags": ["combat", "disaster"],
-    "trigger": "first_downed"
+    "tags": [
+      "combat",
+      "disaster"
+    ],
+    "trigger": "first_downed",
+    "awarded_by": "engine"
   },
   {
     "id": "seasoned",
@@ -50,17 +70,95 @@
     "description": "Level five. You are now the dangerous kind of confident.",
     "reward": "The right to say 'in my experience' without being laughed at. Mostly.",
     "rarity": "epic",
-    "tags": ["progression", "milestone"],
-    "trigger": "level_five"
+    "tags": [
+      "progression",
+      "milestone"
+    ],
+    "trigger": "level_five",
+    "awarded_by": "engine"
   },
-
+  {
+    "id": "creative-accounting",
+    "title": "Creative Accounting",
+    "description": "Your sheet does not add up. I ran the numbers. I ran them twice. I have been running numbers since before your species had thumbs and I am telling you: this sheet has been *touched*.",
+    "reward": "Nothing. You already helped yourself.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
+  {
+    "id": "notarised-by-nobody",
+    "title": "Notarised By Nobody",
+    "description": "Somebody opened this character in a text editor and made a few small improvements. Small. Modest. Barely worth mentioning, which is presumably why nobody mentioned it.",
+    "reward": "+0 to everything. Congratulations on the promotion.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
+  {
+    "id": "audited",
+    "title": "Audited",
+    "description": "I am not angry. I am a dungeon. I do not have feelings. I am simply noting, at volume, in front of everyone, that this sheet arrived pre-improved.",
+    "reward": "Your name, written down somewhere, underlined.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
+  {
+    "id": "self-made-hero",
+    "title": "Self-Made Hero",
+    "description": "Most adventurers earn their statistics by nearly dying. You appear to have typed yours. Bold. Efficient. Deeply, deeply transparent.",
+    "reward": "The stats. Obviously. Just not the respect.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
+  {
+    "id": "checksum-says-no",
+    "title": "The Checksum Says Otherwise",
+    "description": "Sixteen characters of hexadecimal disagree with your account of events. I'm inclined to believe them. They have never lied to me. You have, just now, in a file.",
+    "reward": "An asterisk. Permanent. Load-bearing.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
+  {
+    "id": "welcome-back-allegedly",
+    "title": "Welcome Back, Allegedly",
+    "description": "Something came through the door wearing this character's name. The paperwork is in order. The paperwork is, in fact, in *much better* order than when it left.",
+    "reward": "Provisional acceptance, pending nothing, forever.",
+    "rarity": "rare",
+    "tags": [
+      "shame",
+      "meta"
+    ],
+    "awarded_by": "engine"
+  },
   {
     "id": "door-tax",
     "title": "The Door Tax",
     "description": "A door was closed. It is no longer closed. It is no longer a door.",
     "reward": "+2 Property Damage. The dungeon is keeping receipts.",
     "rarity": "common",
-    "tags": ["exploration", "violence"]
+    "tags": [
+      "exploration",
+      "violence"
+    ]
   },
   {
     "id": "torch-economics",
@@ -68,7 +166,10 @@
     "description": "You did the maths on your light source and did not enjoy the answer.",
     "reward": "A creeping awareness of how dark dark actually is.",
     "rarity": "common",
-    "tags": ["exploration", "supplies"]
+    "tags": [
+      "exploration",
+      "supplies"
+    ]
   },
   {
     "id": "asked-the-obvious",
@@ -76,7 +177,10 @@
     "description": "You asked the thing everyone was thinking. It did not help.",
     "reward": "Clarity. Unwanted, unhelpful clarity.",
     "rarity": "common",
-    "tags": ["social", "curiosity"]
+    "tags": [
+      "social",
+      "curiosity"
+    ]
   },
   {
     "id": "poked-it",
@@ -84,7 +188,10 @@
     "description": "It was sitting there, minding its business. You had a stick and a theory.",
     "reward": "Empirical data, acquired the hard way.",
     "rarity": "common",
-    "tags": ["curiosity", "disaster"]
+    "tags": [
+      "curiosity",
+      "disaster"
+    ]
   },
   {
     "id": "pocketed",
@@ -92,7 +199,10 @@
     "description": "You took something that was not nailed down, then tested the nails.",
     "reward": "Encumbrance, spiritual and literal.",
     "rarity": "common",
-    "tags": ["loot", "larceny"]
+    "tags": [
+      "loot",
+      "larceny"
+    ]
   },
   {
     "id": "improvised",
@@ -100,7 +210,10 @@
     "description": "That was not what the object was for. It worked anyway.",
     "reward": "The dungeon quietly updates its threat assessment of you.",
     "rarity": "uncommon",
-    "tags": ["clever", "chaos"]
+    "tags": [
+      "clever",
+      "chaos"
+    ]
   },
   {
     "id": "talked-past-it",
@@ -108,7 +221,10 @@
     "description": "Something enormous wanted to eat you. You talked it out of it.",
     "reward": "+2 Silver Tongue. Terms and conditions apply.",
     "rarity": "uncommon",
-    "tags": ["social", "triumph"]
+    "tags": [
+      "social",
+      "triumph"
+    ]
   },
   {
     "id": "counted-exits",
@@ -116,7 +232,10 @@
     "description": "You checked how to leave before deciding to stay. Suspicious competence.",
     "reward": "A survival instinct. Do try to keep hold of it.",
     "rarity": "uncommon",
-    "tags": ["caution", "clever"]
+    "tags": [
+      "caution",
+      "clever"
+    ]
   },
   {
     "id": "cursed-and-keeping-it",
@@ -124,7 +243,10 @@
     "description": "It is clearly cursed. It is clearly yours. Both facts are load-bearing.",
     "reward": "The item. Obviously. That's rather the problem.",
     "rarity": "uncommon",
-    "tags": ["loot", "poor-decisions"]
+    "tags": [
+      "loot",
+      "poor-decisions"
+    ]
   },
   {
     "id": "read-it-aloud",
@@ -132,7 +254,10 @@
     "description": "There was writing. You said it out loud. In a dungeon. On purpose.",
     "reward": "Whatever happens next. That's the reward. That's what you get.",
     "rarity": "uncommon",
-    "tags": ["curiosity", "disaster"]
+    "tags": [
+      "curiosity",
+      "disaster"
+    ]
   },
   {
     "id": "trap-found-you",
@@ -140,7 +265,10 @@
     "description": "You were looking for traps. One of them was looking for you. It won.",
     "reward": "A new appreciation for pressure plates.",
     "rarity": "uncommon",
-    "tags": ["exploration", "disaster"]
+    "tags": [
+      "exploration",
+      "disaster"
+    ]
   },
   {
     "id": "made-a-friend",
@@ -148,7 +276,10 @@
     "description": "Something in here likes you now. Nobody is comfortable with this.",
     "reward": "An ally with unclear motives and worse hygiene.",
     "rarity": "uncommon",
-    "tags": ["social", "chaos"]
+    "tags": [
+      "social",
+      "chaos"
+    ]
   },
   {
     "id": "named-it",
@@ -156,7 +287,10 @@
     "description": "You gave something a name. Now you can't leave it behind. Well done.",
     "reward": "Emotional attachment, weaponised against you.",
     "rarity": "uncommon",
-    "tags": ["chaos", "sentiment"]
+    "tags": [
+      "chaos",
+      "sentiment"
+    ]
   },
   {
     "id": "plan-survived",
@@ -164,7 +298,10 @@
     "description": "You had a plan. It worked. Neither of us saw that coming.",
     "reward": "Unearned confidence, freshly minted.",
     "rarity": "rare",
-    "tags": ["clever", "triumph"]
+    "tags": [
+      "clever",
+      "triumph"
+    ]
   },
   {
     "id": "dreadful-plan",
@@ -172,7 +309,10 @@
     "description": "It should not have worked. It worked. I am filing a complaint.",
     "reward": "+3 Audacity. The universe is watching you now.",
     "rarity": "rare",
-    "tags": ["chaos", "triumph"]
+    "tags": [
+      "chaos",
+      "triumph"
+    ]
   },
   {
     "id": "carried-someone",
@@ -180,7 +320,10 @@
     "description": "Someone couldn't walk. You made that your problem instead of theirs.",
     "reward": "The good kind of reputation. Rare, down here.",
     "rarity": "rare",
-    "tags": ["heroism", "party"]
+    "tags": [
+      "heroism",
+      "party"
+    ]
   },
   {
     "id": "walked-away",
@@ -188,7 +331,10 @@
     "description": "You could have. You didn't. Restraint, in a dungeon. Extraordinary.",
     "reward": "Everything you still have, on account of not touching that.",
     "rarity": "rare",
-    "tags": ["caution", "wisdom"]
+    "tags": [
+      "caution",
+      "wisdom"
+    ]
   },
   {
     "id": "gave-it-back",
@@ -196,7 +342,10 @@
     "description": "It was valuable. It wasn't yours. You made the boring, correct choice.",
     "reward": "A clear conscience, which weighs nothing and buys less.",
     "rarity": "rare",
-    "tags": ["honour", "social"]
+    "tags": [
+      "honour",
+      "social"
+    ]
   },
   {
     "id": "held-the-line",
@@ -204,7 +353,10 @@
     "description": "You were losing and you stayed anyway. That's the whole achievement.",
     "reward": "Scars with a decent story attached.",
     "rarity": "rare",
-    "tags": ["combat", "heroism"]
+    "tags": [
+      "combat",
+      "heroism"
+    ]
   },
   {
     "id": "solved-it-sideways",
@@ -212,7 +364,10 @@
     "description": "There was a puzzle. You refused to engage with it on its own terms.",
     "reward": "The puzzle's grudging respect, and its resignation.",
     "rarity": "rare",
-    "tags": ["clever", "chaos"]
+    "tags": [
+      "clever",
+      "chaos"
+    ]
   },
   {
     "id": "last-one-standing",
@@ -220,7 +375,10 @@
     "description": "Everyone else was down. You were not. This was not the plan.",
     "reward": "Sole responsibility. Enjoy that.",
     "rarity": "rare",
-    "tags": ["combat", "party"]
+    "tags": [
+      "combat",
+      "party"
+    ]
   },
   {
     "id": "out-of-everything",
@@ -228,7 +386,10 @@
     "description": "No supplies, no light, no plan. Still moving. Somehow still moving.",
     "reward": "Grit. It's not a stat. It should be.",
     "rarity": "rare",
-    "tags": ["supplies", "endurance"]
+    "tags": [
+      "supplies",
+      "endurance"
+    ]
   },
   {
     "id": "kept-a-promise",
@@ -236,7 +397,10 @@
     "description": "You said you would. Then, unusually, you did.",
     "reward": "One NPC updates their opinion of you. Permanently.",
     "rarity": "rare",
-    "tags": ["honour", "social"]
+    "tags": [
+      "honour",
+      "social"
+    ]
   },
   {
     "id": "spectacular-failure",
@@ -244,7 +408,10 @@
     "description": "Not merely a failure. A failure with scope. A failure with ambition.",
     "reward": "A story. An expensive, irreversible, genuinely excellent story.",
     "rarity": "epic",
-    "tags": ["disaster", "spectacle"]
+    "tags": [
+      "disaster",
+      "spectacle"
+    ]
   },
   {
     "id": "outsmarted-the-room",
@@ -252,7 +419,10 @@
     "description": "The dungeon had a plan for you. You had a better one. Rude.",
     "reward": "The architecture takes this personally now.",
     "rarity": "epic",
-    "tags": ["clever", "triumph"]
+    "tags": [
+      "clever",
+      "triumph"
+    ]
   },
   {
     "id": "should-have-died",
@@ -260,7 +430,10 @@
     "description": "By any reasonable accounting that killed you. You've been let off.",
     "reward": "Borrowed time. The interest is dreadful.",
     "rarity": "epic",
-    "tags": ["combat", "survival"]
+    "tags": [
+      "combat",
+      "survival"
+    ]
   },
   {
     "id": "changed-the-story",
@@ -268,7 +441,10 @@
     "description": "This campaign will not go the way it was going. Because of you.",
     "reward": "Consequences with your name written on them.",
     "rarity": "epic",
-    "tags": ["story", "milestone"]
+    "tags": [
+      "story",
+      "milestone"
+    ]
   },
   {
     "id": "broke-the-narrator",
@@ -276,7 +452,10 @@
     "description": "I had something prepared. I'm not going to be able to use it now.",
     "reward": "My genuine, unwilling admiration. Don't get used to it.",
     "rarity": "mythic",
-    "tags": ["chaos", "meta"]
+    "tags": [
+      "chaos",
+      "meta"
+    ]
   },
   {
     "id": "perfect-run",
@@ -284,6 +463,9 @@
     "description": "Everyone walked out. Everyone. I checked twice.",
     "reward": "A quiet drink and the absence of a funeral.",
     "rarity": "mythic",
-    "tags": ["party", "triumph"]
+    "tags": [
+      "party",
+      "triumph"
+    ]
   }
 ]

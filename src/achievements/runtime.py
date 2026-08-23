@@ -1,15 +1,15 @@
 """Achievement catalogue and awarding.
 
-The old engine rolled dice behind the scenes to decide whether an achievement should
-appear, using a trigger vocabulary that had drifted out of sync with what the bot
-actually emitted -- so story achievements almost never fired. Keith now picks them
-himself from a catalogue we hand him, and this module just enforces the rules and
-formats the block.
+Two kinds. The engine owns the ones it can see for itself -- crits, fumbles,
+levelling, and the shame pool for an edited character sheet -- because leaving
+those to the DM meant they simply stopped happening. Keith owns the narrative ones
+and fetches the catalogue with a tool when he wants to give one out.
 """
 
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -33,9 +33,12 @@ class Achievement:
     reward: str
     rarity: str
     tags: tuple[str, ...] = ()
-    #: Set on achievements the engine awards itself when a game event happens.
-    #: These are kept out of the catalogue Keith reads -- they're not his to give.
+    #: The game event this is awarded for, when it maps to exactly one.
     trigger: str | None = None
+    #: "engine" ones are awarded by the code and kept out of the catalogue Keith
+    #: reads -- they aren't his to give, and he shouldn't hand out a shame award
+    #: for a good roll.
+    awarded_by: str = "dm"
 
 
 @lru_cache(maxsize=1)
@@ -51,6 +54,7 @@ def load_registry() -> dict[str, Achievement]:
             rarity=entry.get("rarity", "common"),
             tags=tuple(entry.get("tags", ())),
             trigger=entry.get("trigger"),
+            awarded_by=entry.get("awarded_by", "dm"),
         )
         for entry in entries
     }
@@ -87,7 +91,7 @@ def render_catalogue(limit: int | None = None, exclude: set[str] | None = None) 
             a
             for a in load_registry().values()
             # Engine-awarded ones aren't Keith's to give, so he never sees them.
-            if a.trigger is None and a.id not in (exclude or set())
+            if a.awarded_by != "engine" and a.id not in (exclude or set())
         ),
         key=lambda a: (RARITY_ORDER.index(a.rarity) if a.rarity in RARITY_ORDER else 99, a.id),
     )
@@ -110,6 +114,30 @@ async def award_trigger(
     if achievement is None:
         return None
     return await award(repo, campaign, character, achievement.id)
+
+
+async def award_from_pool(
+    repo: Repo,
+    campaign: Campaign,
+    character: Character,
+    tag: str,
+    rng: random.Random | None = None,
+) -> str | None:
+    """Award a random engine achievement carrying `tag`, preferring an unearned one.
+
+    Used for the shame pool: get caught twice and you get told off differently.
+    """
+    pool = [a for a in load_registry().values() if a.awarded_by == "engine" and tag in a.tags]
+    if not pool:
+        return None
+
+    rng = rng or random.Random()
+    unearned = [a for a in pool if not await repo.has_achievement(character.id, a.id)]
+    if not unearned:
+        # They've collected the whole set. Say something anyway.
+        return format_block(rng.choice(pool))
+
+    return await award(repo, campaign, character, rng.choice(unearned).id)
 
 
 async def award(

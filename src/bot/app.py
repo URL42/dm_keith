@@ -34,6 +34,7 @@ from src.bot.context import CONN_KEY, REPO_KEY, SERVICE_KEY
 from src.bot.creation import build_join_handler
 from src.bot.play import handle_play
 from src.bot.rolls import ROLL_PREFIX, handle_roll
+from src.bot.sheets import handle_export
 from src.config import Settings
 from src.game.session import GameService
 from src.log import get_logger
@@ -57,6 +58,7 @@ BOT_COMMANDS = [
     BotCommand("begin", "Start the story once the party's ready"),
     BotCommand("sheet", "Your character sheet"),
     BotCommand("party", "Everyone's character sheets"),
+    BotCommand("export", "Save your character to a file"),
     BotCommand("endgame", "Retire the current campaign"),
     BotCommand("help", "What all of this does"),
 ]
@@ -99,6 +101,7 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CommandHandler("sheet", handle_sheet))
     app.add_handler(CommandHandler("party", handle_party))
     app.add_handler(CommandHandler("endgame", handle_endgame))
+    app.add_handler(CommandHandler("export", handle_export))
 
     # Creation is a conversation, so it must see /join before anything else does.
     app.add_handler(build_join_handler())
