@@ -19,11 +19,12 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from src.achievements.runtime import award_trigger
 from src.bot.context import get_repo, get_service, reply
 from src.game.characters import xp_for_check
 from src.game.dice import DiceInstruction, roll_instruction
 from src.log import get_logger
-from src.storage.repo import Character, PendingRoll
+from src.storage.repo import Character, PendingRoll, Repo
 
 log = get_logger(__name__)
 
@@ -53,6 +54,29 @@ async def prompt_for_roll(message: Message, pending: PendingRoll, character: Cha
         parse_mode=ParseMode.HTML,
         reply_markup=roll_keyboard(pending),
     )
+
+
+async def _award_triggers(
+    repo: Repo, *, campaign_id: int, character: Character, triggers: list[str]
+) -> list[str]:
+    """Award every achievement these events earn. Returns the 🏆 blocks."""
+    campaign = await repo.get_campaign(campaign_id)
+    if campaign is None:
+        return []
+
+    blocks = []
+    for trigger in triggers:
+        if not trigger:
+            continue
+        try:
+            block = await award_trigger(repo, campaign, character, trigger)
+        except Exception:
+            log.exception("couldn't award the %s achievement", trigger)
+            continue
+        if block:
+            log.info("achievement [%s] -> %s", trigger, character.name)
+            blocks.append(block)
+    return blocks
 
 
 def verdict_for(total: int, natural: int, dc: int) -> str:
@@ -136,6 +160,23 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # the narration as well would leave the player with nothing at all.
         log.exception("couldn't award XP to %s", character.name)
         awarded = 0
+
+    # Achievements the engine can see for itself. Leaving these to the DM meant
+    # they simply stopped happening -- same failure as XP.
+    was_first_check = character.xp == awarded
+    blocks = await _award_triggers(
+        repo,
+        campaign_id=pending.campaign_id,
+        character=character,
+        triggers=[
+            "first_check" if was_first_check else "",
+            "natural_20" if natural == 20 else "",
+            "natural_1" if natural == 1 else "",
+            "level_up" if levelled else "",
+            "level_five" if levelled and character.level >= 5 else "",
+        ],
+    )
+
     log.info(
         "player roll %s %s -> %s vs DC %s (%s)",
         character.name,
@@ -168,6 +209,12 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
         return
 
+    # The 🏆 block is the centrepiece of the whole persona; post it before the
+    # narration so it reads as the system interrupting, which is the point.
+    if update.effective_message:
+        for block in blocks:
+            await update.effective_message.reply_text(block)
+
     outcome = (
         f"{character.name} rolled {result.total} against DC {pending.dc} "
         f"({pending.ability.upper()} check: {pending.reason or 'no reason given'}) — {verdict}. "
@@ -181,6 +228,12 @@ async def handle_roll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"They have just reached LEVEL {character.level}, max HP {character.max_hp} — "
             "announce it with appropriate drama. "
             if levelled
+            else ""
+        )
+        + (
+            "An achievement has already been posted for this, so don't write another "
+            "block — but do react to it. "
+            if blocks
             else ""
         )
         + "Narrate what happens as a result."

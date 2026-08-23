@@ -75,7 +75,7 @@ async def test_the_model_sees_the_story_so_far(
     assert "The party entered the crypt." not in instructions
     assert "The corridor flickers into view." not in instructions
     # The achievement catalogue is fetched by tool now, not shipped every request.
-    assert "icebox-raider" not in instructions
+    assert "door-tax" not in instructions
 
     # Everything that changes rides in the prompt instead.
     assert "The party entered the crypt." in prompt

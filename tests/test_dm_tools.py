@@ -206,8 +206,8 @@ async def test_award_achievement_returns_a_block_once(
 ) -> None:
     deps = deps_for(repo, campaign, hero)
     model = scripted(
-        ("award_achievement", {"character_name": "Thorn", "achievement_id": "icebox-raider"}),
-        ("award_achievement", {"character_name": "Thorn", "achievement_id": "icebox-raider"}),
+        ("award_achievement", {"character_name": "Thorn", "achievement_id": "door-tax"}),
+        ("award_achievement", {"character_name": "Thorn", "achievement_id": "door-tax"}),
     )
     result = await dm_agent.run("I open the fridge", model=model, deps=deps)
 

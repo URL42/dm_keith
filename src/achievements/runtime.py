@@ -33,6 +33,9 @@ class Achievement:
     reward: str
     rarity: str
     tags: tuple[str, ...] = ()
+    #: Set on achievements the engine awards itself when a game event happens.
+    #: These are kept out of the catalogue Keith reads -- they're not his to give.
+    trigger: str | None = None
 
 
 @lru_cache(maxsize=1)
@@ -47,9 +50,20 @@ def load_registry() -> dict[str, Achievement]:
             reward=entry.get("reward", ""),
             rarity=entry.get("rarity", "common"),
             tags=tuple(entry.get("tags", ())),
+            trigger=entry.get("trigger"),
         )
         for entry in entries
     }
+
+
+@lru_cache(maxsize=1)
+def _by_trigger() -> dict[str, Achievement]:
+    return {a.trigger: a for a in load_registry().values() if a.trigger}
+
+
+def for_trigger(name: str) -> Achievement | None:
+    """The achievement the engine awards for a given game event, if any."""
+    return _by_trigger().get(name)
 
 
 def format_block(achievement: Achievement) -> str:
@@ -69,7 +83,12 @@ def render_catalogue(limit: int | None = None, exclude: set[str] | None = None) 
     most turns don't award anything.
     """
     entries = sorted(
-        (a for a in load_registry().values() if a.id not in (exclude or set())),
+        (
+            a
+            for a in load_registry().values()
+            # Engine-awarded ones aren't Keith's to give, so he never sees them.
+            if a.trigger is None and a.id not in (exclude or set())
+        ),
         key=lambda a: (RARITY_ORDER.index(a.rarity) if a.rarity in RARITY_ORDER else 99, a.id),
     )
     if limit is not None:
@@ -77,6 +96,20 @@ def render_catalogue(limit: int | None = None, exclude: set[str] | None = None) 
     if not entries:
         return "Nothing left in the catalogue that they haven't already earned."
     return "\n".join(f"- {a.id} ({a.rarity}): {a.title} — {a.description}" for a in entries)
+
+
+async def award_trigger(
+    repo: Repo, campaign: Campaign, character: Character, trigger: str
+) -> str | None:
+    """Award the achievement for a game event. Returns the block, or None.
+
+    None covers both "no achievement for that event" and "they already have it",
+    which are the same thing to the caller.
+    """
+    achievement = for_trigger(trigger)
+    if achievement is None:
+        return None
+    return await award(repo, campaign, character, achievement.id)
 
 
 async def award(

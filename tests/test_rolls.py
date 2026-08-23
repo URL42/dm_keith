@@ -491,3 +491,86 @@ async def test_a_failed_xp_award_still_narrates_the_roll(
     update.effective_message.reply_text.assert_awaited()
     shown = update.callback_query.edit_message_text.await_args.args[0]
     assert "XP" not in shown  # no award to report
+
+
+# -- engine-awarded achievements --------------------------------------------
+
+
+async def test_a_first_check_unlocks_something(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock
+) -> None:
+    """Leaving achievements to the DM meant they stopped happening entirely."""
+    await repo.update_campaign(campaign.id, status="active")
+    pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 12, "the ledge")
+
+    update = tap(pending.id, hero.user_id)
+    await handle_roll(update, context)
+
+    earned = await repo.list_achievements(hero.id)
+    assert "first-of-many" in {aid for aid, _ in earned}
+
+    # And the 🏆 block is actually posted to the chat.
+    posted = [c.args[0] for c in update.effective_message.reply_text.await_args_list]
+    assert any("ACHIEVEMENT UNLOCKED" in p for p in posted)
+
+
+async def test_a_crit_and_a_fumble_each_unlock_once(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock, monkeypatch
+) -> None:
+    from src.game import dice
+
+    await repo.update_campaign(campaign.id, status="active")
+
+    def always(value: int) -> object:
+        return lambda self, a, b: value
+
+    for natural, expected in ((20, "natural-twenty"), (1, "natural-one")):
+        monkeypatch.setattr(dice.random.Random, "randint", always(natural))
+        for _ in range(2):  # twice: it must only ever be awarded once
+            pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 12, "again")
+            await handle_roll(tap(pending.id, hero.user_id), context)
+
+        earned = [aid for aid, _ in await repo.list_achievements(hero.id)]
+        assert earned.count(expected) == 1
+
+
+async def test_levelling_unlocks_the_progression_achievement(
+    repo: Repo, campaign: Campaign, hero: Character, context: MagicMock
+) -> None:
+    await repo.update_campaign(campaign.id, status="active")
+    for _ in range(10):
+        pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 15, "a ledge")
+        await handle_roll(tap(pending.id, hero.user_id), context)
+
+    earned = {aid for aid, _ in await repo.list_achievements(hero.id)}
+    assert "ascending" in earned
+
+
+def test_engine_achievements_are_hidden_from_the_dms_catalogue() -> None:
+    """Keith shouldn't be able to hand out ones the engine owns."""
+    from src.achievements.runtime import load_registry, render_catalogue
+
+    catalogue = render_catalogue()
+    triggered = [a for a in load_registry().values() if a.trigger]
+    assert triggered, "expected some engine-triggered achievements"
+
+    for achievement in triggered:
+        assert achievement.id not in catalogue
+
+    # But there are still plenty for him to choose from.
+    assert catalogue.count("\n") > 20
+
+
+def test_the_registry_is_written_for_a_dungeon() -> None:
+    """It used to be the old chatbot's: fridges, CSVs and mode switches."""
+    from src.achievements.runtime import load_registry
+
+    registry = load_registry()
+    assert len(registry) >= 30
+
+    tags = {t for a in registry.values() for t in a.tags}
+    assert {"combat", "loot", "exploration"} <= tags
+    assert not {"analysis", "mode"} & tags  # the old bot's vocabulary
+
+    rarities = {a.rarity for a in registry.values()}
+    assert rarities == {"common", "uncommon", "rare", "epic", "mythic"}

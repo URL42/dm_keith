@@ -210,10 +210,10 @@ async def test_achievements_are_per_character(
 ) -> None:
     other = await repo.create_character(campaign.id, user_id=2, name="Vex")
 
-    await repo.grant_achievement(campaign.id, hero.id, "icebox-raider", "common")
-    assert await repo.has_achievement(hero.id, "icebox-raider")
-    assert not await repo.has_achievement(other.id, "icebox-raider")
-    assert await repo.list_achievements(hero.id) == [("icebox-raider", "common")]
+    await repo.grant_achievement(campaign.id, hero.id, "door-tax", "common")
+    assert await repo.has_achievement(hero.id, "door-tax")
+    assert not await repo.has_achievement(other.id, "door-tax")
+    assert await repo.list_achievements(hero.id) == [("door-tax", "common")]
 
 
 async def test_asset_cache_upserts(repo: Repo) -> None:
