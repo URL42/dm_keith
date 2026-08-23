@@ -102,6 +102,7 @@ def context(repo: Repo) -> MagicMock:
     ctx.user_data = {}
     ctx.chat_data = {}
     ctx.bot.send_chat_action = AsyncMock()
+    ctx.args = []
     return ctx
 
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -103,6 +105,29 @@ class Message:
     role: str
     character_id: int | None
     content: str
+    created_at: str = ""
+
+
+@dataclass(frozen=True)
+class Chapter:
+    """One chapter of the campaign's written-up story."""
+
+    id: int
+    number: int
+    title: str
+    body: str
+    through_message_id: int
+    through_grant_id: int
+
+
+@dataclass(frozen=True)
+class Grant:
+    """An achievement someone earned, with enough context to print it in a book."""
+
+    id: int
+    achievement_id: str
+    rarity: str
+    character_name: str
 
 
 @dataclass(frozen=True)
@@ -140,6 +165,23 @@ class Repo:
         self.conn = conn
         self._write_lock = asyncio.Lock()
 
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        """Hold the write lock, and roll back if the block doesn't finish.
+
+        Without the rollback, sqlite leaves the implicit transaction open after an
+        exception -- and because the connection is shared, the *next* commit anywhere
+        in the app (a player taking a turn, say) would quietly persist the half-done
+        work. That's how a failed book rewrite could delete most of a book.
+        """
+        async with self._write_lock:
+            try:
+                yield
+                await self.conn.commit()
+            except BaseException:
+                await self.conn.rollback()
+                raise
+
     # -- campaigns ---------------------------------------------------------
 
     async def get_live_campaign(self, chat_id: int) -> Campaign | None:
@@ -166,7 +208,7 @@ class Repo:
         Both statements commit together: a crash between them would otherwise leave
         the chat with no live campaign at all.
         """
-        async with self._write_lock:
+        async with self.transaction():
             await self.conn.execute(
                 "UPDATE campaigns SET status = 'ended', updated_at = datetime('now') "
                 "WHERE chat_id = ? AND status != 'ended'",
@@ -176,7 +218,6 @@ class Repo:
                 "INSERT INTO campaigns (chat_id, genre, genre_skin, tone) VALUES (?, ?, ?, ?)",
                 (chat_id, genre, json.dumps(genre_skin or {}), tone),
             )
-            await self.conn.commit()
             campaign_id = int(cur.lastrowid or 0)
 
         campaign = await self.get_campaign(campaign_id)
@@ -493,6 +534,14 @@ class Repo:
         )
         return [self._message(row) for row in await cur.fetchall()]
 
+    async def messages_after(self, campaign_id: int, after_id: int) -> list[Message]:
+        """Everything since a watermark, oldest first."""
+        cur = await self.conn.execute(
+            "SELECT * FROM messages WHERE campaign_id = ? AND id > ? ORDER BY id",
+            (campaign_id, after_id),
+        )
+        return [self._message(row) for row in await cur.fetchall()]
+
     async def count_messages_after(self, campaign_id: int, after_id: int) -> int:
         cur = await self.conn.execute(
             "SELECT count(*) AS n FROM messages WHERE campaign_id = ? AND id > ?",
@@ -557,7 +606,7 @@ class Repo:
         Delete-then-insert rather than an upsert, so the replacement gets a fresh id
         and the superseded button in the chat can never be tapped into the new roll.
         """
-        async with self._write_lock:
+        async with self.transaction():
             await self.conn.execute(
                 "DELETE FROM pending_rolls WHERE campaign_id = ? AND character_id = ?",
                 (campaign_id, character_id),
@@ -567,7 +616,6 @@ class Repo:
                 "VALUES (?, ?, ?, ?, ?)",
                 (campaign_id, character_id, ability, dc, reason),
             )
-            await self.conn.commit()
             roll_id = int(cur.lastrowid or 0)
             cur = await self.conn.execute("SELECT * FROM pending_rolls WHERE id = ?", (roll_id,))
             row = await cur.fetchone()
@@ -639,6 +687,120 @@ class Repo:
         )
         return [(row["achievement_id"], row["rarity"]) for row in await cur.fetchall()]
 
+    # -- the chronicle -----------------------------------------------------
+
+    async def list_chapters(self, campaign_id: int) -> list[Chapter]:
+        cur = await self.conn.execute(
+            "SELECT * FROM chronicle_chapters WHERE campaign_id = ? ORDER BY number",
+            (campaign_id,),
+        )
+        return [self._chapter(row) for row in await cur.fetchall()]
+
+    async def last_chapter(self, campaign_id: int) -> Chapter | None:
+        cur = await self.conn.execute(
+            "SELECT * FROM chronicle_chapters WHERE campaign_id = ? ORDER BY number DESC LIMIT 1",
+            (campaign_id,),
+        )
+        row = await cur.fetchone()
+        return self._chapter(row) if row else None
+
+    async def add_chapter(
+        self,
+        campaign_id: int,
+        title: str,
+        body: str,
+        through_message_id: int,
+        through_grant_id: int,
+    ) -> Chapter:
+        """Append a chapter. Numbering is derived, so callers can't skip or collide."""
+        async with self._write_lock:
+            cur = await self.conn.execute(
+                "SELECT coalesce(max(number), 0) + 1 AS next FROM chronicle_chapters "
+                "WHERE campaign_id = ?",
+                (campaign_id,),
+            )
+            row = await cur.fetchone()
+            number = int(row["next"]) if row else 1
+
+            cur = await self.conn.execute(
+                "INSERT INTO chronicle_chapters (campaign_id, number, title, body, "
+                "through_message_id, through_grant_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (campaign_id, number, title, body, through_message_id, through_grant_id),
+            )
+            await self.conn.commit()
+            chapter_id = int(cur.lastrowid or 0)
+
+        cur = await self.conn.execute(
+            "SELECT * FROM chronicle_chapters WHERE id = ?", (chapter_id,)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            raise MissingRow(f"chapter {chapter_id} vanished immediately after insert")
+        return self._chapter(row)
+
+    async def delete_chapter(self, chapter_id: int) -> None:
+        await self.conn.execute("DELETE FROM chronicle_chapters WHERE id = ?", (chapter_id,))
+        await self.conn.commit()
+
+    async def replace_chapters(self, campaign_id: int, chapters: list[Chapter]) -> None:
+        """Swap the whole book in one transaction.
+
+        The final polish pass rewrites every chapter; committing them one at a time
+        would leave a half-rewritten book if it failed partway.
+        """
+        async with self.transaction():
+            await self.conn.execute(
+                "DELETE FROM chronicle_chapters WHERE campaign_id = ?", (campaign_id,)
+            )
+            for number, chapter in enumerate(chapters, start=1):
+                await self.conn.execute(
+                    "INSERT INTO chronicle_chapters (campaign_id, number, title, body, "
+                    "through_message_id, through_grant_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        campaign_id,
+                        number,
+                        chapter.title,
+                        chapter.body,
+                        chapter.through_message_id,
+                        chapter.through_grant_id,
+                    ),
+                )
+
+    async def latest_grant_id_at(self, campaign_id: int, as_of: str) -> int:
+        """The newest grant earned by the time `as_of` was written.
+
+        A chapter covers a span of play, so its achievements are the ones earned
+        during that span -- not every achievement in the campaign. `achievement_grants`
+        has no message id to join on, so the span's last message timestamp is the
+        boundary. Second-resolution, which is plenty for deciding which chapter of a
+        book an award belongs in.
+        """
+        cur = await self.conn.execute(
+            "SELECT coalesce(max(id), 0) AS latest FROM achievement_grants "
+            "WHERE campaign_id = ? AND awarded_at <= ?",
+            (campaign_id, as_of),
+        )
+        row = await cur.fetchone()
+        return int(row["latest"]) if row else 0
+
+    async def grants_between(self, campaign_id: int, after_id: int, through_id: int) -> list[Grant]:
+        """Achievements earned in a chapter's span, by grant id rather than clock time."""
+        cur = await self.conn.execute(
+            "SELECT g.id, g.achievement_id, g.rarity, c.name AS character_name "
+            "FROM achievement_grants g JOIN characters c ON c.id = g.character_id "
+            "WHERE g.campaign_id = ? AND g.id > ? AND g.id <= ? ORDER BY g.id",
+            (campaign_id, after_id, through_id),
+        )
+        return [
+            Grant(
+                id=row["id"],
+                achievement_id=row["achievement_id"],
+                rarity=row["rarity"],
+                character_name=row["character_name"],
+            )
+            for row in await cur.fetchall()
+        ]
+
     # -- telegram asset cache ----------------------------------------------
 
     async def get_asset(self, key: str) -> str | None:
@@ -702,6 +864,18 @@ class Repo:
             role=row["role"],
             character_id=row["character_id"],
             content=row["content"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _chapter(row: aiosqlite.Row) -> Chapter:
+        return Chapter(
+            id=row["id"],
+            number=row["number"],
+            title=row["title"],
+            body=row["body"],
+            through_message_id=row["through_message_id"],
+            through_grant_id=row["through_grant_id"],
         )
 
     async def _character(self, row: aiosqlite.Row) -> Character:

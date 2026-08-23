@@ -9,6 +9,7 @@ from telegram.constants import ChatAction, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from src.bot.chronicle import write_final_edition
 from src.bot.context import chat_state, get_repo, get_service, reply, send_preformatted
 from src.game.genres import GENRES, Genre, genre_for, genre_to_dict, get_genre
 from src.game.memory import render_character
@@ -331,6 +332,10 @@ async def handle_endgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if campaign is None:
         await update.message.reply_text("Nothing to end.")
         return
+
+    # Write the book before retiring anything: this is the moment the campaign is
+    # finite, so it's the only chance at a version that knows how it ended.
+    await write_final_edition(update, context, campaign)
 
     # Drop outstanding roll buttons too, so tapping a leftover one doesn't consume a
     # roll into a campaign that no longer exists.

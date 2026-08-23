@@ -116,6 +116,21 @@ CREATE TABLE IF NOT EXISTS achievement_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_grants_character ON achievement_grants (character_id, achievement_id);
 
+-- The campaign written up as a book, a chapter at a time. Chapters are kept rather
+-- than regenerated: a long campaign can't be re-novelised in one request, so the
+-- book grows by appending and the watermarks say where the last one stopped.
+CREATE TABLE IF NOT EXISTS chronicle_chapters (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id        INTEGER NOT NULL REFERENCES campaigns (id) ON DELETE CASCADE,
+    number             INTEGER NOT NULL,
+    title              TEXT    NOT NULL,
+    body               TEXT    NOT NULL,
+    through_message_id INTEGER NOT NULL,   -- last message covered
+    through_grant_id   INTEGER NOT NULL,   -- last achievement covered
+    created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (campaign_id, number)
+);
+
 -- Telegram file_id cache so we upload each sound effect only once.
 CREATE TABLE IF NOT EXISTS bot_assets (
     key     TEXT PRIMARY KEY,

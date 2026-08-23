@@ -22,6 +22,9 @@ log = get_logger(__name__)
 REPO_KEY = "repo"
 CONN_KEY = "conn"
 SERVICE_KEY = "service"
+#: The model that writes the campaign up as a book. Separate from the DM's, so the
+#: game can run on something cheap while the book gets something good.
+CHRONICLER_KEY = "chronicler"
 
 #: Telegram rejects messages over 4096 characters.
 MAX_MESSAGE_LEN = 4000
@@ -39,6 +42,15 @@ def get_service(context: ContextTypes.DEFAULT_TYPE) -> GameService:
     if not isinstance(service, GameService):
         raise RuntimeError("game service not initialised")
     return service
+
+
+def get_chronicler(context: ContextTypes.DEFAULT_TYPE) -> Any | None:
+    """The chronicler's model, or None if it couldn't be built.
+
+    Absent is a legitimate state: a broken DMK_SUMMARY_MODEL shouldn't stop anyone
+    playing, it should only stop the book being written.
+    """
+    return context.application.bot_data.get(CHRONICLER_KEY)
 
 
 def chat_state(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:

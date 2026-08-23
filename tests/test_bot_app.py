@@ -58,6 +58,7 @@ def test_all_commands_are_registered(settings: Settings) -> None:
         "sheet",
         "party",
         "export",
+        "chronicle",
         "endgame",
     } <= registered
     assert app.error_handlers, "an error handler must be attached"
@@ -91,7 +92,17 @@ async def test_post_init_attaches_a_repo_and_shutdown_closes_it(
     # The "/" menu is populated so players can see their options.
     app.bot.set_my_commands.assert_awaited_once()
     registered = {c.command for c in app.bot.set_my_commands.await_args.args[0]}
-    assert {"newgame", "join", "begin", "sheet", "party", "export", "endgame", "help"} == registered
+    assert {
+        "newgame",
+        "join",
+        "begin",
+        "sheet",
+        "party",
+        "export",
+        "chronicle",
+        "endgame",
+        "help",
+    } == registered
     assert isinstance(app.bot_data[REPO_KEY], Repo)
     assert isinstance(app.bot_data[SERVICE_KEY], GameService)
     assert settings.db_path.exists()

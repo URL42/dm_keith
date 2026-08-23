@@ -18,6 +18,7 @@ from telegram.ext import (
     filters,
 )
 
+from src.bot.chronicle import handle_chronicle
 from src.bot.commands import (
     CANCEL_NEW,
     CONFIRM_NEW,
@@ -30,13 +31,14 @@ from src.bot.commands import (
     handle_party,
     handle_sheet,
 )
-from src.bot.context import CONN_KEY, REPO_KEY, SERVICE_KEY
+from src.bot.context import CHRONICLER_KEY, CONN_KEY, REPO_KEY, SERVICE_KEY
 from src.bot.creation import build_join_handler
 from src.bot.play import handle_play
 from src.bot.rolls import ROLL_PREFIX, handle_roll
 from src.bot.sheets import handle_export
 from src.config import Settings
 from src.game.session import GameService
+from src.llm.models import ModelConfigError, build_model
 from src.log import get_logger
 from src.storage.db import connect
 from src.storage.repo import Repo
@@ -59,6 +61,7 @@ BOT_COMMANDS = [
     BotCommand("sheet", "Your character sheet"),
     BotCommand("party", "Everyone's character sheets"),
     BotCommand("export", "Save your character to a file"),
+    BotCommand("chronicle", "Write the campaign up as a story"),
     BotCommand("endgame", "Retire the current campaign"),
     BotCommand("help", "What all of this does"),
 ]
@@ -102,6 +105,7 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CommandHandler("party", handle_party))
     app.add_handler(CommandHandler("endgame", handle_endgame))
     app.add_handler(CommandHandler("export", handle_export))
+    app.add_handler(CommandHandler("chronicle", handle_chronicle))
 
     # Creation is a conversation, so it must see /join before anything else does.
     app.add_handler(build_join_handler())
@@ -135,6 +139,14 @@ def _startup(settings: Settings) -> Callable[[Application], Coroutine[Any, Any, 
         app.bot_data[CONN_KEY] = conn
         app.bot_data[REPO_KEY] = repo
         app.bot_data[SERVICE_KEY] = service
+
+        # The book's model is optional: if it can't be built, the game still runs
+        # and only /chronicle complains.
+        try:
+            app.bot_data[CHRONICLER_KEY] = build_model(settings.summary_model)
+        except ModelConfigError as exc:
+            log.warning("chronicler unavailable (%s); /chronicle will be disabled", exc)
+            app.bot_data[CHRONICLER_KEY] = None
         log.info("database ready at %s", settings.db_path)
         log.info(
             "dm model=%s effort=%s summary model=%s",

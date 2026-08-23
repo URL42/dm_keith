@@ -42,6 +42,20 @@ button appears, and tapping it shows the roll, your modifier and the target numb
 before he narrates what it cost you. He still rolls monster attacks and damage
 himself — only your own attempts are yours to roll.
 
+**Campaigns become books.** `/chronicle` writes up everything that's happened since
+the last time you asked, appends it as a new chapter, and sends you the whole thing
+as a `.md` file — narrated by Keith in past tense, with the dice and hit points
+stripped out and the 🏆 blocks closing each chapter. `/chronicle redo` rewrites the
+most recent chapter if it came out badly.
+
+Chapters are kept rather than regenerated, so the book grows with the campaign
+instead of having to fit in one request. `/endgame` catches up and then rewrites the
+whole thing knowing how it ended, which is the one moment early chapters can
+foreshadow. That final pass takes a few minutes and several model calls.
+
+It runs on `DMK_SUMMARY_MODEL`, so you can play on something cheap and fast and have
+the book written by something good.
+
 **Characters outlive campaigns.** `/export` sends you a Markdown character sheet —
 readable, printable, with the exact data in a JSON block at the end. Upload it into
 any other campaign and that character walks in with their level, XP, gear and
