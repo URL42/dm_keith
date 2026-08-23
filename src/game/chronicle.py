@@ -23,7 +23,7 @@ from src.game.memory import render_character, render_transcript
 from src.llm.chronicler import Chapter as WrittenChapter
 from src.llm.chronicler import rewrite_chapter, write_chapter
 from src.log import get_logger
-from src.storage.repo import Campaign, Chapter, Repo
+from src.storage.repo import Campaign, Chapter, Message, Repo
 
 log = get_logger(__name__)
 
@@ -65,6 +65,23 @@ async def _story_so_far(repo: Repo, campaign_id: int) -> str:
     )
 
 
+def split_into_spans(messages: list[Message]) -> list[list[Message]]:
+    """Break a backlog into chapter-sized spans, covering everything exactly once.
+
+    A trailing remainder shorter than a chapter is folded into the span before it,
+    so a long absence doesn't end with a chapter about somebody opening a door.
+    """
+    spans: list[list[Message]] = []
+    index = 0
+    while index < len(messages):
+        span = messages[index : index + MAX_CHAPTER_MESSAGES]
+        if 0 < len(messages) - (index + len(span)) < MIN_CHAPTER_MESSAGES:
+            span = messages[index:]
+        index += len(span)
+        spans.append(span)
+    return spans
+
+
 async def catch_up(
     repo: Repo,
     campaign: Campaign,
@@ -94,18 +111,17 @@ async def catch_up(
     written: list[Chapter] = []
 
     # Work forward in chapter-sized spans, each written knowing the ones before it.
-    index = 0
-    while index < len(outstanding):
-        span = outstanding[index : index + MAX_CHAPTER_MESSAGES]
-        # Don't leave a stub span trailing; fold a short remainder into this one.
-        if 0 < len(outstanding) - (index + len(span)) < MIN_CHAPTER_MESSAGES:
-            span = outstanding[index:]
-        index += len(span)
+    spans = split_into_spans(outstanding)
+    for position, span in enumerate(spans):
+        # Bound the grant watermark by where the *next* span starts, not where this
+        # one ends: stamping every chapter with the campaign-wide maximum piles all
+        # the achievements into chapter one, and using this span's last message drops
+        # any award whose timestamp ticked over a second later.
+        following = spans[position + 1] if position + 1 < len(spans) else None
+        grant_id = await repo.latest_grant_id(
+            campaign.id, before=following[0].created_at if following else None
+        )
 
-        # Bound by this span, not the campaign: writing several chapters at once
-        # would otherwise stamp them all with the same grant watermark and pile
-        # every achievement into the first one.
-        grant_id = await repo.latest_grant_id_at(campaign.id, span[-1].created_at)
         chapter = await write_chapter(
             model=model,
             settings=settings,

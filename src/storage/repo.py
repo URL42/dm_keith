@@ -766,20 +766,22 @@ class Repo:
                     ),
                 )
 
-    async def latest_grant_id_at(self, campaign_id: int, as_of: str) -> int:
-        """The newest grant earned by the time `as_of` was written.
+    async def latest_grant_id(self, campaign_id: int, before: str | None = None) -> int:
+        """The newest achievement grant, optionally only those earned before `before`.
 
-        A chapter covers a span of play, so its achievements are the ones earned
-        during that span -- not every achievement in the campaign. `achievement_grants`
-        has no message id to join on, so the span's last message timestamp is the
-        boundary. Second-resolution, which is plenty for deciding which chapter of a
-        book an award belongs in.
+        A chapter's achievements are the ones earned during its span, not every
+        achievement in the campaign. `achievement_grants` has no message id to join
+        on, so a timestamp is the boundary -- and it has to be the *next* span's first
+        message rather than this span's last, because an achievement is awarded just
+        after the message that earned it and can carry a later second.
         """
-        cur = await self.conn.execute(
-            "SELECT coalesce(max(id), 0) AS latest FROM achievement_grants "
-            "WHERE campaign_id = ? AND awarded_at <= ?",
-            (campaign_id, as_of),
-        )
+        sql = "SELECT coalesce(max(id), 0) AS latest FROM achievement_grants WHERE campaign_id = ?"
+        params: tuple[Any, ...] = (campaign_id,)
+        if before is not None:
+            sql += " AND awarded_at < ?"
+            params += (before,)
+
+        cur = await self.conn.execute(sql, params)
         row = await cur.fetchone()
         return int(row["latest"]) if row else 0
 

@@ -17,9 +17,13 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from src.bot.commands import (
     CANCEL_NEW,
     CONFIRM_NEW,
+    ENDGAME_CANCEL,
+    ENDGAME_RETIRE,
+    ENDGAME_WRITE,
     GENRE_PREFIX,
     handle_begin,
     handle_endgame,
+    handle_endgame_choice,
     handle_genre_choice,
     handle_newgame,
     handle_newgame_confirm,
@@ -125,6 +129,14 @@ def callback_update(data: str) -> MagicMock:
     update.callback_query.answer = AsyncMock()
     update.callback_query.edit_message_text = AsyncMock()
     return update
+
+
+async def _retire(context: MagicMock, write_book: bool = False) -> None:
+    """/endgame asks before doing anything, so retiring means answering it."""
+    await handle_endgame(message_update(), context)
+    await handle_endgame_choice(
+        callback_update(ENDGAME_WRITE if write_book else ENDGAME_RETIRE), context
+    )
 
 
 async def _play_through(context: MagicMock) -> Any:
@@ -349,14 +361,37 @@ async def test_two_begins_only_open_the_story_once(repo: Repo, context: MagicMoc
     assert len(openings) == 1
 
 
-async def test_endgame_retires_the_campaign(repo: Repo, context: MagicMock) -> None:
+async def test_endgame_asks_before_it_does_anything(repo: Repo, context: MagicMock) -> None:
+    """Retiring can't be undone and writing the book costs real money, so neither
+    should happen because somebody typed a command to see what it did."""
     await _play_through(context)
 
-    ending = message_update()
-    await handle_endgame(ending, context)
+    asking = message_update()
+    await handle_endgame(asking, context)
+
+    assert await repo.get_live_campaign(CHAT_ID) is not None  # nothing has happened yet
+    assert asking.message.reply_text.await_args.kwargs["reply_markup"] is not None
+
+
+async def test_endgame_retires_once_confirmed(repo: Repo, context: MagicMock) -> None:
+    await _play_through(context)
+    await handle_endgame(message_update(), context)
+
+    confirming = callback_update(ENDGAME_RETIRE)
+    await handle_endgame_choice(confirming, context)
 
     assert await repo.get_live_campaign(CHAT_ID) is None
-    assert "retired" in ending.message.reply_text.await_args.args[0].lower()
+    said = " ".join(str(c.args[0]) for c in confirming.message.reply_text.await_args_list if c.args)
+    assert "retired" in said.lower()
+
+
+async def test_never_mind_leaves_the_campaign_running(repo: Repo, context: MagicMock) -> None:
+    await _play_through(context)
+    await handle_endgame(message_update(), context)
+
+    await handle_endgame_choice(callback_update(ENDGAME_CANCEL), context)
+
+    assert await repo.get_live_campaign(CHAT_ID) is not None
 
 
 async def test_a_model_failure_is_reported_not_narrated(repo: Repo, context: MagicMock) -> None:
@@ -562,7 +597,7 @@ async def test_a_character_survives_into_a_new_campaign(repo: Repo, context: Mag
     assert "# Bramble" in sheet
 
     # A brand new campaign in a different genre.
-    await handle_endgame(message_update(), context)
+    await _retire(context)
     await handle_newgame(message_update(), context)
     await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
 
@@ -594,7 +629,7 @@ async def test_an_edited_sheet_gets_publicly_shamed(repo: Repo, context: MagicMo
 
     sheet = (await _exported_sheet(repo, context)).replace('"xp": 950', '"xp": 63000')
 
-    await handle_endgame(message_update(), context)
+    await _retire(context)
     await handle_newgame(message_update(), context)
     await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
 
@@ -631,7 +666,7 @@ async def test_rubbish_uploads_are_turned_away(repo: Repo, context: MagicMock) -
     from src.bot.creation import start_import
 
     await _play_through(context)
-    await handle_endgame(message_update(), context)
+    await _retire(context)
     await handle_newgame(message_update(), context)
     await handle_genre_choice(callback_update(f"{GENRE_PREFIX}fantasy"), context)
 

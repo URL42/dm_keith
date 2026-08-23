@@ -10,7 +10,14 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from src.bot.chronicle import write_final_edition
-from src.bot.context import chat_state, get_repo, get_service, reply, send_preformatted
+from src.bot.context import (
+    chat_state,
+    get_chronicler,
+    get_repo,
+    get_service,
+    reply,
+    send_preformatted,
+)
 from src.game.genres import GENRES, Genre, genre_for, genre_to_dict, get_genre
 from src.game.memory import render_character
 from src.llm.genre_builder import MAX_GENRE_NAME, GenreGenerationFailed, build_genre
@@ -21,6 +28,10 @@ log = get_logger(__name__)
 GENRE_PREFIX = "genre:"
 CONFIRM_NEW = "newgame:confirm"
 CANCEL_NEW = "newgame:cancel"
+
+ENDGAME_WRITE = "endgame:write"
+ENDGAME_RETIRE = "endgame:retire"
+ENDGAME_CANCEL = "endgame:cancel"
 
 
 #: Set while a genre keyboard is outstanding, so a typed reply builds that genre
@@ -322,25 +333,68 @@ async def handle_party(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_endgame(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Retire the current campaign."""
+    """Ask what to do, rather than retiring on the spot.
+
+    Retiring can't be undone, and writing the final edition costs several minutes
+    and a run of model calls, so neither should happen because somebody typed a
+    command to see what it did.
+    """
     chat = update.effective_chat
     if chat is None or update.message is None:
+        return
+
+    campaign = await get_repo(context).get_live_campaign(chat.id)
+    if campaign is None:
+        await update.message.reply_text("Nothing to end.")
+        return
+
+    buttons = []
+    if get_chronicler(context) is not None:
+        buttons.append(
+            [InlineKeyboardButton("Write it up, then retire", callback_data=ENDGAME_WRITE)]
+        )
+    buttons.append([InlineKeyboardButton("Just retire it", callback_data=ENDGAME_RETIRE)])
+    buttons.append([InlineKeyboardButton("Never mind", callback_data=ENDGAME_CANCEL)])
+
+    await update.message.reply_text(
+        "Ending the campaign — that can't be undone.\n\n"
+        "I can write the whole thing up as a book first, revised end to end now that "
+        "I know how it finished. That takes a few minutes and a run of model calls.",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+async def handle_endgame_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Act on the /endgame buttons."""
+    query = update.callback_query
+    chat = update.effective_chat
+    if query is None or chat is None:
+        return
+    await query.answer()
+
+    if query.data == ENDGAME_CANCEL:
+        await query.edit_message_text("Still going, then. Carry on.")
         return
 
     repo = get_repo(context)
     campaign = await repo.get_live_campaign(chat.id)
     if campaign is None:
-        await update.message.reply_text("Nothing to end.")
+        await query.edit_message_text("That campaign has already ended.")
         return
 
-    # Write the book before retiring anything: this is the moment the campaign is
-    # finite, so it's the only chance at a version that knows how it ended.
-    await write_final_edition(update, context, campaign)
+    await query.edit_message_text("Right then.")
+
+    if query.data == ENDGAME_WRITE:
+        # Before retiring anything: this is the moment the campaign is finite, so
+        # it's the only chance at a version that knows how it ended.
+        await write_final_edition(update, context, campaign)
 
     # Drop outstanding roll buttons too, so tapping a leftover one doesn't consume a
     # roll into a campaign that no longer exists.
     await repo.clear_pending_rolls(campaign.id)
     await repo.end_campaign(chat.id)
-    await update.message.reply_text(
-        "Campaign retired. The story is kept, but that's the end of it. /newgame when you're ready."
-    )
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            "Campaign retired. The story is kept, but that's the end of it. "
+            "/newgame when you're ready."
+        )

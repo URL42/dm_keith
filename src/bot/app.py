@@ -22,9 +22,13 @@ from src.bot.chronicle import handle_chronicle
 from src.bot.commands import (
     CANCEL_NEW,
     CONFIRM_NEW,
+    ENDGAME_CANCEL,
+    ENDGAME_RETIRE,
+    ENDGAME_WRITE,
     GENRE_PREFIX,
     handle_begin,
     handle_endgame,
+    handle_endgame_choice,
     handle_genre_choice,
     handle_newgame,
     handle_newgame_confirm,
@@ -114,6 +118,12 @@ def build_application(settings: Settings) -> Application:
     app.add_handler(CallbackQueryHandler(handle_genre_choice, pattern=f"^{GENRE_PREFIX}"))
     app.add_handler(
         CallbackQueryHandler(handle_newgame_confirm, pattern=f"^({CONFIRM_NEW}|{CANCEL_NEW})$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            handle_endgame_choice,
+            pattern=f"^({ENDGAME_WRITE}|{ENDGAME_RETIRE}|{ENDGAME_CANCEL})$",
+        )
     )
 
     # Anything else that isn't a command is a move in the story.

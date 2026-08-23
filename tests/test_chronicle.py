@@ -361,23 +361,34 @@ async def test_achievements_spread_across_chapters_written_in_one_go(
     catch_up piled every achievement into chapter one."""
     await _play(repo, campaign, hero, exchanges=40)
     await repo.grant_achievement(campaign.id, hero.id, "door-tax", "common")
-    # A later timestamp, so the grant falls after the first span's last message.
+    await _play(repo, campaign, hero, exchanges=40)
+    await repo.grant_achievement(campaign.id, hero.id, "poked-it", "common")
+
+    # Second-resolution timestamps all collapse in a fast test, so space them out:
+    # span one and its award, then span two and its award.
+    await repo.conn.execute("UPDATE messages SET created_at = datetime('now') WHERE id <= 80")
     await repo.conn.execute(
-        "UPDATE achievement_grants SET awarded_at = datetime('now', '+1 hour') "
+        "UPDATE achievement_grants SET awarded_at = datetime('now', '+1 minute') "
         "WHERE achievement_id = 'door-tax'"
     )
-    await _play(repo, campaign, hero, exchanges=40)
     await repo.conn.execute(
-        "UPDATE messages SET created_at = datetime('now', '+2 hours') WHERE id > 80"
+        "UPDATE messages SET created_at = datetime('now', '+2 minutes') WHERE id > 80"
+    )
+    await repo.conn.execute(
+        "UPDATE achievement_grants SET awarded_at = datetime('now', '+3 minutes') "
+        "WHERE achievement_id = 'poked-it'"
     )
     await repo.conn.commit()
 
     model, _ = chronicler()
     written = await catch_up(repo, campaign, model=model, settings=None)
-    assert len(written) >= 2
+    assert len(written) == 2
 
-    # The award belongs to the span it happened in, not to chapter one by default.
-    assert written[0].through_grant_id != written[-1].through_grant_id
+    # Each award renders under the chapter whose span earned it.
+    book = await render_book(repo, campaign)
+    first, second = book.split("## 2.")
+    assert "The Door Tax" in first and "You Poked It" not in first
+    assert "You Poked It" in second
 
 
 async def test_a_failure_inside_replace_chapters_keeps_the_old_book(
