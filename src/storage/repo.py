@@ -550,6 +550,28 @@ class Repo:
         row = await cur.fetchone()
         return int(row["n"]) if row else 0
 
+    async def messages_since_last_player_roll(self, campaign_id: int) -> int | None:
+        """How many messages have passed since a player last touched the dice.
+
+        None means nobody has ever rolled here -- a different situation from "rolled
+        a while ago", and the nudge phrases the two differently.
+
+        Reads the `roll_marks` watermark rather than comparing timestamps: rolls and
+        messages are separate id sequences, and `created_at` is only accurate to the
+        second, so it can't order a roll against messages written alongside it.
+
+        A campaign that was mid-flight when this shipped has no watermark and reads
+        as never having rolled, so the nudge fires once and then settles as soon as
+        anyone rolls. That's the right way round: it errs toward more dice.
+        """
+        cur = await self.conn.execute(
+            "SELECT message_id FROM roll_marks WHERE campaign_id = ?", (campaign_id,)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return await self.count_messages_after(campaign_id, int(row["message_id"]))
+
     async def add_story_event(
         self, campaign_id: int, kind: str, summary: str, entities: list[str] | None = None
     ) -> int:
@@ -589,12 +611,22 @@ class Repo:
         source: str = "dm",
         reason: str = "",
     ) -> None:
-        await self.conn.execute(
-            "INSERT INTO dice_rolls (campaign_id, character_id, expression, detail, total, "
-            "source, reason) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (campaign_id, character_id, expression, detail, total, source, reason),
-        )
-        await self.conn.commit()
+        # A player's roll also moves the pacing watermark, so the two writes go in
+        # one transaction: a half-applied pair would leave the nudge reading a
+        # watermark for a roll that isn't there.
+        async with self.transaction():
+            await self.conn.execute(
+                "INSERT INTO dice_rolls (campaign_id, character_id, expression, detail, total, "
+                "source, reason) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (campaign_id, character_id, expression, detail, total, source, reason),
+            )
+            if source == "player":
+                await self.conn.execute(
+                    "INSERT INTO roll_marks (campaign_id, message_id) "
+                    "VALUES (?, (SELECT coalesce(max(id), 0) FROM messages WHERE campaign_id = ?)) "
+                    "ON CONFLICT (campaign_id) DO UPDATE SET message_id = excluded.message_id",
+                    (campaign_id, campaign_id),
+                )
 
     # -- pending player rolls ----------------------------------------------
 
@@ -653,6 +685,28 @@ class Repo:
             await self.conn.commit()
 
         return self._pending_roll(row), character
+
+    async def has_pending_roll(self, campaign_id: int) -> bool:
+        """Whether anyone in this campaign currently owes a roll.
+
+        The dice aren't quiet while a button is sitting in the chat unpressed --
+        nothing has been rolled, but asking again is the wrong thing to do.
+        """
+        cur = await self.conn.execute(
+            "SELECT 1 FROM pending_rolls WHERE campaign_id = ? LIMIT 1", (campaign_id,)
+        )
+        return await cur.fetchone() is not None
+
+    async def delete_pending_roll(self, roll_id: int) -> None:
+        """Drop one outstanding roll.
+
+        Used when a turn asked for a check but then failed before its button could
+        be posted: the row would otherwise leave a character owing a roll that
+        nothing in the chat ever offers them.
+        """
+        async with self._write_lock:
+            await self.conn.execute("DELETE FROM pending_rolls WHERE id = ?", (roll_id,))
+            await self.conn.commit()
 
     async def clear_pending_rolls(self, campaign_id: int) -> None:
         """Drop every outstanding roll. Called when a campaign is retired."""

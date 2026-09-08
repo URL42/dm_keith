@@ -11,7 +11,13 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from src.bot.context import REPO_KEY, SERVICE_KEY
 from src.bot.rolls import ROLL_PREFIX, handle_roll
-from src.game.session import GameService
+from src.game.memory import (
+    ROLL_GAP_MESSAGES,
+    ROLL_GRACE_MESSAGES,
+    build_turn_context,
+    render_pacing,
+)
+from src.game.session import GameService, TurnFailed
 from src.llm.dm_agent import dm_agent
 from src.storage.repo import Campaign, Character, Repo
 from tests.test_dm_tools import deps_for, scripted, tool_outputs
@@ -574,3 +580,192 @@ def test_the_registry_is_written_for_a_dungeon() -> None:
 
     rarities = {a.rarity for a in registry.values()}
     assert rarities == {"common", "uncommon", "rare", "epic", "mythic"}
+
+
+# -- pacing: keeping the dice from going quiet -------------------------------
+
+
+def test_pacing_says_nothing_in_the_opening_messages() -> None:
+    """Early on, no rolls yet is just early -- not a problem to point at."""
+    assert render_pacing(messages_so_far=4, messages_since_roll=None) == ""
+
+
+def test_pacing_notices_a_campaign_that_has_never_rolled() -> None:
+    nudge = render_pacing(messages_so_far=20, messages_since_roll=None)
+    assert "request_roll" in nudge
+    assert "20 messages" in nudge
+
+
+def test_pacing_notices_the_dice_going_quiet() -> None:
+    """The bug this replaces: one early roll silenced the nudge forever."""
+    nudge = render_pacing(messages_so_far=61, messages_since_roll=7)
+    assert "request_roll" in nudge
+    # The gap, not the campaign length: 61 contains "7" nowhere, so this can only
+    # pass if the right number was interpolated.
+    assert "7 messages" in nudge
+
+
+def test_pacing_is_quiet_while_a_button_is_waiting_to_be_pressed() -> None:
+    """Players can type instead of tapping, so this state lasts. Nudging through it
+    would make Keith ask again every turn -- and each new request replaces the
+    pending row, killing the button already sitting in the chat."""
+    assert render_pacing(60, 40, roll_outstanding=True) == ""
+    assert render_pacing(60, None, roll_outstanding=True) == ""
+    # ...but it is genuinely quiet once that check has been taken.
+    assert render_pacing(60, 40, roll_outstanding=False) != ""
+
+
+async def test_an_unpressed_button_silences_the_nudge_end_to_end(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    for _ in range(ROLL_GRACE_MESSAGES):
+        await repo.add_message(campaign.id, "player", "we press on", character_id=hero.id)
+    assert "## Pacing" in await build_turn_context(repo, campaign)
+
+    pending = await repo.create_pending_roll(campaign.id, hero.id, "dex", 12, "the ledge")
+    assert await repo.has_pending_roll(campaign.id) is True
+    assert "## Pacing" not in await build_turn_context(repo, campaign)
+
+    await repo.claim_pending_roll(pending.id, hero.user_id)
+    assert await repo.has_pending_roll(campaign.id) is False
+
+
+async def test_keiths_own_rolls_do_not_count_as_the_party_rolling(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """The whole point is players touching dice. If a DM roll moved the watermark,
+    Keith could silence the nudge by rolling for himself -- and the original bug,
+    a campaign where nobody is ever asked to roll, would come back invisibly."""
+    for _ in range(ROLL_GRACE_MESSAGES):
+        await repo.add_message(campaign.id, "player", "we press on", character_id=hero.id)
+
+    await repo.log_roll(
+        campaign.id,
+        expression="2d6+3",
+        detail="goblin spear",
+        total=9,
+        character_id=hero.id,
+        source="dm",
+    )
+
+    assert await repo.messages_since_last_player_roll(campaign.id) is None
+    assert "## Pacing" in await build_turn_context(repo, campaign)
+
+
+def test_pacing_is_quiet_just_after_a_roll() -> None:
+    """It has to be able to switch off, or it becomes standing pressure."""
+    assert render_pacing(messages_so_far=60, messages_since_roll=1) == ""
+
+
+async def test_pacing_recovers_after_a_roll_and_fires_again_later(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """End to end against the database: quiet, then rolled, then quiet again.
+
+    The old nudge keyed off a character having 0 XP, so a single resolved check
+    disabled it permanently. This asserts it comes back.
+    """
+    for _ in range(ROLL_GRACE_MESSAGES):
+        await repo.add_message(campaign.id, "player", "we press on", character_id=hero.id)
+
+    assert await repo.messages_since_last_player_roll(campaign.id) is None
+    context = await build_turn_context(repo, campaign)
+    assert "## Pacing" in context
+
+    await repo.log_roll(
+        campaign.id,
+        expression="dex",
+        detail="d20 [12] +2 DEX = 14",
+        total=14,
+        character_id=hero.id,
+        source="player",
+        reason="the ledge",
+    )
+    # XP has been earned by now, which is precisely what used to silence the nudge.
+    await repo.grant_xp(hero.id, 50)
+    assert await repo.messages_since_last_player_roll(campaign.id) == 0
+    assert "## Pacing" not in await build_turn_context(repo, campaign)
+
+    for _ in range(ROLL_GAP_MESSAGES + 1):
+        await repo.add_message(campaign.id, "player", "and on", character_id=hero.id)
+
+    assert await repo.messages_since_last_player_roll(campaign.id) >= ROLL_GAP_MESSAGES
+    assert "## Pacing" in await build_turn_context(repo, campaign)
+
+
+# -- a roll whose button never arrives ---------------------------------------
+
+
+async def _outstanding(repo: Repo, campaign_id: int, character_id: int) -> int:
+    """How many rolls this character currently owes. Read directly: there is no
+    repo method for it, and adding one purely for a test would be scope creep."""
+    cur = await repo.conn.execute(
+        "SELECT count(*) AS n FROM pending_rolls WHERE campaign_id = ? AND character_id = ?",
+        (campaign_id, character_id),
+    )
+    row = await cur.fetchone()
+    return int(row["n"])
+
+
+def _roll_then(text: str | None) -> FunctionModel:
+    """Requests a roll, then answers with `text` -- or raises if None."""
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        for message in messages:
+            for part in getattr(message, "parts", []):
+                if part.part_kind == "tool-return":
+                    if text is None:
+                        raise RuntimeError("the provider fell over")
+                    return ModelResponse(parts=[TextPart(text)])
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "request_roll",
+                    {"character_name": "Thorn", "ability": "dex", "dc": 14, "reason": "ledge"},
+                )
+            ]
+        )
+
+    return FunctionModel(respond)
+
+
+async def test_a_failed_turn_does_not_leave_a_roll_nobody_can_make(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """The button is posted from the result, so a turn that never returns one
+    would strand the row -- and the character would silently owe a check."""
+    service = GameService(repo, "test:function", model=_roll_then(None))
+
+    with pytest.raises(TurnFailed):
+        await service.take_turn(campaign, "I edge along", hero)
+
+    assert await _outstanding(repo, campaign.id, hero.id) == 0
+
+
+async def test_an_empty_turn_does_not_leave_a_roll_nobody_can_make(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """A blank reply is surfaced as "Keith says nothing" and posts no button, so it
+    strands the row exactly as an exception does.
+
+    Whitespace rather than "": pydantic-ai treats a truly empty output as no output
+    and retries into UnexpectedModelBehavior, which is the exception path above.
+    Whitespace is accepted as an answer and only becomes empty when we strip it,
+    which is precisely the case the session layer has to catch for itself."""
+    service = GameService(repo, "test:function", model=_roll_then("   \n  "))
+    result = await service.take_turn(campaign, "I edge along", hero)
+
+    assert result.reply == ""
+    assert result.pending_roll is None
+    assert await _outstanding(repo, campaign.id, hero.id) == 0
+
+
+async def test_a_roll_survives_a_turn_that_actually_worked(
+    repo: Repo, campaign: Campaign, hero: Character
+) -> None:
+    """The cleanup must not fire on the happy path."""
+    service = GameService(repo, "test:function", model=_roll_then("You reach out…"))
+    result = await service.take_turn(campaign, "I edge along", hero)
+
+    assert result.pending_roll is not None
+    assert await _outstanding(repo, campaign.id, hero.id) == 1

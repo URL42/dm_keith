@@ -136,3 +136,15 @@ CREATE TABLE IF NOT EXISTS bot_assets (
     key     TEXT PRIMARY KEY,
     file_id TEXT NOT NULL
 );
+
+-- Where the transcript had got to the last time a player rolled, so the turn
+-- context can tell how long the dice have been quiet.
+--
+-- A table rather than a column on campaigns because adding a column doesn't reach
+-- an already-deployed database; and a message watermark rather than comparing
+-- timestamps because created_at is only accurate to the second, which can't order
+-- a roll against the messages written in the same second as it.
+CREATE TABLE IF NOT EXISTS roll_marks (
+    campaign_id INTEGER PRIMARY KEY REFERENCES campaigns (id) ON DELETE CASCADE,
+    message_id  INTEGER NOT NULL   -- last messages.id at the time of the roll
+);

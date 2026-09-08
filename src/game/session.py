@@ -177,6 +177,10 @@ class GameService:
                 )
             except Exception as exc:
                 # Tools commit as they run, so anything they already did has stuck.
+                # A requested roll is the one thing we can't leave behind: its button
+                # is posted by the bot layer from the result we're about to not
+                # return, so the row would sit there with nothing ever offering it.
+                await self._drop_pending(deps)
                 raise TurnFailed(exc, partial=deps.mutations > 0) from exc
             elapsed = time.monotonic() - started
 
@@ -197,9 +201,32 @@ class GameService:
 
             if reply:
                 await self.repo.add_message(campaign.id, "dm", reply)
+            else:
+                # An empty turn is surfaced to the player as "Keith says nothing" and
+                # the button never gets posted, so a roll asked for here is orphaned
+                # just as surely as one lost to an exception.
+                await self._drop_pending(deps)
 
             return TurnResult(
                 reply=reply,
                 cues=list(dict.fromkeys(deps.cues)),
                 pending_roll=deps.pending_roll,
             )
+
+    async def _drop_pending(self, deps: GameDeps) -> None:
+        """Undo a roll request whose button will never reach the chat.
+
+        Best-effort: this runs on the failure path, and a cleanup that raised would
+        replace the real error with a less useful one.
+        """
+        if deps.pending_roll is None:
+            return
+        try:
+            await self.repo.delete_pending_roll(deps.pending_roll.id)
+            # Undone, so it no longer counts as the world having moved. Without this
+            # a turn whose only tool call was request_roll tells the player "some of
+            # it may already have happened" when nothing did.
+            deps.mutations -= 1
+        except Exception:
+            log.warning("couldn't clear the orphaned pending roll", exc_info=True)
+        deps.pending_roll = None

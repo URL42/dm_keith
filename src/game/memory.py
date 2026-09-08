@@ -144,32 +144,65 @@ def build_instructions(campaign: Campaign, genre: Genre) -> str:
     return "\n".join(parts)
 
 
-#: How many messages a campaign runs before never having awarded XP looks like an
+#: How many messages a campaign runs before never having rolled looks like an
 #: oversight rather than simply being early.
-XP_GRACE_MESSAGES = 8
+ROLL_GRACE_MESSAGES = 8
+
+#: How many messages may pass after a roll before the dice have gone quiet. A turn is
+#: two messages (the player's action and Keith's reply), so this is roughly three
+#: turns -- long enough for a conversation or a quiet scene, short enough that a
+#: whole session can't go by untouched.
+#:
+#: Both thresholds are only ever tested against an odd count: the nudge is built
+#: after the player's message and before Keith's reply, so 6 and 7 behave
+#: identically (each first trips at 7). Tune in steps of two.
+ROLL_GAP_MESSAGES = 6
 
 
-def render_progression(party: list[Character], messages_so_far: int) -> str:
-    """A nudge, shown only when someone has been adventuring without ever earning XP.
+def render_pacing(
+    messages_so_far: int, messages_since_roll: int | None, *, roll_outstanding: bool = False
+) -> str:
+    """A nudge, shown while the dice have gone quiet.
 
-    XP now comes from resolved checks, so a character stuck on zero means they have
-    never been asked to roll for anything -- which is a pacing problem, not a
-    bookkeeping one. The nudge disappears the moment it stops being true, so it
-    can't become standing pressure. Current XP is on each sheet in the party block.
+    This measures *recency*, not lifetime totals. The previous version looked for
+    characters on 0 XP, but checks pay XP automatically -- so one roll in the opening
+    minutes put everyone above zero and the nudge could never fire again for the rest
+    of the campaign. Keith rolled twice on session one and then effectively never
+    again, which is exactly what it stopped being able to see.
+
+    Args:
+        messages_so_far: Every message in the campaign.
+        messages_since_roll: Messages since a player last rolled, or None if no
+            player ever has.
+        roll_outstanding: Whether a button is already waiting to be pressed.
     """
-    if messages_so_far < XP_GRACE_MESSAGES:
+    if messages_so_far < ROLL_GRACE_MESSAGES:
         return ""
 
-    stalled = [c for c in party if c.xp == 0]
-    if not stalled:
+    # A check has been asked for and not yet taken. Players can carry on typing
+    # instead of tapping, so this state can last -- but the answer to it is to wait,
+    # not to ask again. Asking again replaces the pending row and kills the button
+    # already sitting in the chat, so nagging here would break the very thing it
+    # is nagging for.
+    if roll_outstanding:
         return ""
 
-    names = ", ".join(c.name for c in stalled)
-    return (
-        f"{names} — still on 0 XP after {messages_so_far} messages, which means nothing "
-        "they've attempted has been put to a roll. Look for the next thing with real "
-        "stakes and call request_roll on it."
-    )
+    if messages_since_roll is None:
+        return (
+            f"Nobody has rolled anything in {messages_so_far} messages. The players are "
+            "watching a story rather than playing a game. Find the next thing anyone "
+            "attempts against real resistance and call request_roll on it."
+        )
+
+    if messages_since_roll >= ROLL_GAP_MESSAGES:
+        return (
+            f"The dice have been quiet for {messages_since_roll} messages. Something in "
+            "the next beat should be uncertain enough to be worth a check — call "
+            "request_roll on the next thing a character attempts with real stakes, "
+            "rather than narrating how it went."
+        )
+
+    return ""
 
 
 async def build_turn_context(
@@ -195,9 +228,13 @@ async def build_turn_context(
 
     sections.append(f"## The party\n\n{render_party(party, genre)}")
 
-    nudge = render_progression(party, await repo.count_messages_after(campaign.id, 0))
+    nudge = render_pacing(
+        await repo.count_messages_after(campaign.id, 0),
+        await repo.messages_since_last_player_roll(campaign.id),
+        roll_outstanding=await repo.has_pending_roll(campaign.id),
+    )
     if nudge:
-        sections.append(f"## Progression\n\n{nudge}")
+        sections.append(f"## Pacing\n\n{nudge}")
 
     transcript = render_transcript(messages, party)
     if transcript:

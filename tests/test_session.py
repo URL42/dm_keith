@@ -100,36 +100,51 @@ async def test_the_instructions_are_identical_across_turns(
     assert seen[1] != seen[3]
 
 
-async def test_the_xp_nudge_appears_only_when_progression_has_stalled(
+async def test_the_pacing_nudge_appears_only_once_the_dice_have_gone_quiet(
     repo: Repo, campaign: Campaign, hero: Character
 ) -> None:
-    """Keith never called grant_xp in real play. The nudge fixes that without
-    turning into standing pressure to award XP every single turn."""
+    """Keith requested three rolls across an entire deployment. The nudge tracks how
+    long it's been since anyone rolled, and stands down as soon as they do."""
     seen: list[str] = []
     service = service_with(repo, capturing_model(seen))
 
-    # Early on, 0 XP is just being early -- no nudge. (The sheet still shows the
-    # number; what's absent is the "you should have awarded some by now" prompt.)
+    # Early on, no rolls yet is just being early.
     await service.take_turn(campaign, "we set off", hero)
-    assert "still on 0 XP" not in seen[1]
-    assert "## Progression" not in seen[1]
+    assert "## Pacing" not in seen[1]
 
-    # After a while with nothing awarded, say so.
+    # After a while with nothing rolled, say so.
     for _ in range(6):
         await repo.add_message(campaign.id, "player", "more adventuring", character_id=hero.id)
     seen.clear()
     await service.take_turn(campaign, "still going", hero)
-    assert "still on 0 XP" in seen[1]
-    assert "Thorn" in seen[1]
-    # XP comes from checks now, so the nudge points at rolling, not at grant_xp.
+    assert "## Pacing" in seen[1]
     assert "request_roll" in seen[1]
+    # It's about rolling, not bookkeeping: XP is awarded by the engine now.
     assert "grant_xp" not in seen[1]
 
-    # Once XP flows, the nudge disappears rather than nagging for more.
-    await repo.grant_xp(hero.id, 50)
+    # A roll stands it down -- it must be able to switch off, or it becomes
+    # standing pressure to roll on every single turn.
+    await repo.log_roll(
+        campaign.id,
+        expression="dex",
+        detail="d20 [12] +2 DEX = 14",
+        total=14,
+        character_id=hero.id,
+        source="player",
+        reason="the ledge",
+    )
     seen.clear()
     await service.take_turn(campaign, "onwards", hero)
-    assert "still on 0 XP" not in seen[1]
+    assert "## Pacing" not in seen[1]
+
+    # ...and comes back when the dice go quiet again. The nudge this replaced keyed
+    # off a character having 0 XP, so a single check disabled it for good.
+    await repo.grant_xp(hero.id, 50)
+    for _ in range(6):
+        await repo.add_message(campaign.id, "player", "and on", character_id=hero.id)
+    seen.clear()
+    await service.take_turn(campaign, "and on again", hero)
+    assert "## Pacing" in seen[1]
 
 
 async def test_context_survives_a_restart(repo: Repo, campaign: Campaign, hero: Character) -> None:

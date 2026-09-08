@@ -165,12 +165,23 @@ async def reply(
 
     # If Keith asked for a check, the dice go to the player -- hang the button off
     # the end of his narration, where the cliffhanger is.
+    #
+    # The row is created by the tool but the button is posted here, so every way of
+    # not posting it has to take the row back out. A character who silently owes a
+    # roll nothing ever offers them blocks nothing, but it does mean the pacing
+    # nudge sees an outstanding check and stops asking for one.
     if result.pending_roll is not None:
         from src.bot.rolls import prompt_for_roll
 
-        character = await get_repo(context).get_character_by_id(result.pending_roll.character_id)
-        if character is not None:
+        repo = get_repo(context)
+        character = await repo.get_character_by_id(result.pending_roll.character_id)
+        try:
+            if character is None:
+                raise RuntimeError(f"character {result.pending_roll.character_id} is gone")
             await prompt_for_roll(sent, result.pending_roll, character)
+        except Exception:
+            log.warning("couldn't post the roll button; dropping the check", exc_info=True)
+            await repo.delete_pending_roll(result.pending_roll.id)
 
     await send_cues(context, chat.id, result.cues)
 
